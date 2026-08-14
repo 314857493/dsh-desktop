@@ -18,6 +18,31 @@ DSH，本仓库提供的是桌面封装、自包含打包与自动化发布（�
 - ⚙️ **可配置**：内置资源 / 配置文件 / 环境变量 / 命令行参数四级优先级
 - 🔄 **跟随上游**：发布脚本从 DSH 官方仓库拉取源码构建，可固定 tag/分支，随上游更新
 
+## 环境要求
+
+### 运行环境（最终用户）
+
+| 要求 | 说明 |
+| --- | --- |
+| 操作系统 | Windows 10/11 x64 |
+| WebView2 运行时 | 安装包自动检测/安装（Win11 一般自带），无需手动处理 |
+| Node.js | **不需要**（安装包内置 node 运行时） |
+| DSH 源码 | **不需要**（内置裁剪过的 DSH 运行环境） |
+
+### 构建 / 发布环境（开发者）
+
+| 依赖 | 版本要求 | 用途 |
+| --- | --- | --- |
+| 操作系统 | Windows 10/11 x64 | 打包 NSIS 安装包 |
+| Node.js | ≥ 22 | 运行发布脚本 / 内置运行时来源 |
+| pnpm | 与仓库 lockfile 匹配 | 依赖安装与 deploy |
+| Rust | stable（MSVC target） | 编译 Tauri 壳 |
+| VS Build Tools | C++ 工作负载 | Rust 链接（link.exe） |
+| `@tauri-apps/cli` | ≥ 2 | tauri 打包 |
+| git | 任意 | 远程源码拉取 |
+
+> 构建机需要有 Node（发布脚本会从它复制核心文件进安装包）；**运行环境的用户则不需要**。
+
 ## 快速开始
 
 - **已安装**：双击桌面/开始菜单的「DSH Desktop」即可。
@@ -110,7 +135,7 @@ node scripts/release.mjs --skip-boot-test
 | **默认（远程）** | `git fetch` → `pnpm install` → `pnpm run build` → deploy… | 无本地 clone / 要最新代码 / CI |
 | **`--local`（本地）** | 校验 `apps/cli/lib/bin.js` 等构建产物：**已构建 → 跳过 install+build 直接打包**；未构建 → 需 `--rebuild-repo` 先构建 | 本地已有 clone 且构建过，秒级出包 |
 
-### 流水线（远程模式 10 步）
+### 流水线（远程模式 11 步）
 
 0. `git fetch` 远程源码（默认 `master`，可 `--ref` 指定 tag/分支/commit）
 1. `pnpm install`（frozen lockfile）
@@ -121,21 +146,12 @@ node scripts/release.mjs --skip-boot-test
 6. `trim-runtime` 裁剪 map/类型/源码
 7. `prune-rt` **自动扫描**：依赖闭包 + 运行时代码引用扫描，删除确无引用的孤儿包
    （旧安装包自动备份到 `backup-pre-prune/`；被引用/未声明的运行时依赖如 tsx 自动保留）
-8. `boot-test` 运行时冒烟测试（起服务器、等就绪行）
-9. `tauri build` 产出安装包
+8. `ensure node-runtime` 从系统 Node 复制核心文件（node.exe + npm/corepack）
+9. `boot-test` 运行时冒烟测试（起服务器、等就绪行）
+10. `tauri build` 产出安装包
 
 > 每次发布都会**重新自动扫描**依赖：DSH 源码更新后，新依赖自动保留、
 > 新垃圾自动裁剪，无需手动维护清单。
-
-### 构建要求
-
-| 依赖 | 用途 | 安装 |
-| --- | --- | --- |
-| Node.js ≥ 22 | 运行脚本 / 内置运行时探测 | fnm / 官网 |
-| pnpm | 依赖安装与 deploy | `corepack enable` 或官网 |
-| Rust（MSVC target）+ VS Build Tools C++ | 编译 Tauri 壳 | rustup + VS Build Tools |
-| `@tauri-apps/cli` | `tauri build` 打包 | `npm i -g @tauri-apps/cli` |
-| git | 远程源码拉取 | 随系统 |
 
 ### 产物
 
