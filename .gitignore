@@ -1,0 +1,33 @@
+# Rust / Tauri
+src-tauri/target/
+src-tauri/gen/
+
+# Node
+node_modules/
+
+# Local test data (incl. stamped homes like .dsh-boot-test-20260814-123456)
+.dsh-*/
+.dsh-test/
+.dsh-verify*/
+
+# Self-contained bundle staging (rebuilt by release.mjs)
+rt/
+runtime-test/
+node-runtime/
+node-v24*.zip
+node-extract/
+patch-run.log
+serve-out.log
+serve-err.log
+
+# Remote source cache + release backups (large, local-only)
+repo-cache/
+backup-pre-prune/
+
+# Misc
+icon-preview*.png
+
+# Editor
+.vscode/
+.idea/
+*.user

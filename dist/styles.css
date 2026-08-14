@@ -1,0 +1,74 @@
+:root {
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: #0d1117;
+  color: #e6edf3;
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.splash {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 24px;
+  text-align: center;
+}
+
+.logo {
+  margin-bottom: 4px;
+}
+
+h1 {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+}
+
+.status {
+  margin: 6px 0 0;
+  font-size: 14px;
+  color: #9da7b3;
+}
+
+.detail {
+  margin: 0;
+  font-size: 12px;
+  color: #6e7681;
+  max-width: 520px;
+  word-break: break-all;
+  white-space: pre-wrap;
+}
+
+.spinner {
+  width: 34px;
+  height: 34px;
+  margin-top: 10px;
+  border: 3px solid rgba(74, 125, 255, 0.25);
+  border-top-color: #4a7dff;
+  border-radius: 50%;
+  animation: spin 0.9s linear infinite;
+}
+
+.spinner.hidden {
+  display: none;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
