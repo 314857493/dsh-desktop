@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Syntax-check release scripts
+        run: |
+          set -e
+          for f in scripts/*.mjs; do
+            echo "checking $f"
+            node --check "$f"
+          done
+
+      - name: Whitespace check
+        run: git diff --check
+
+      - name: No machine-specific paths
+        run: |
+          set -e
+          if grep -rnE "D:[\\\\/]vibe|[0-9]{5}@qq\.com|C:[\\\\/]Users" --include="*.mjs" --include="*.rs" --include="*.json" --include="*.md" --include="*.cmd" .; then
+            echo "machine-specific paths found" >&2
+            exit 1
+          fi
+          echo "clean"

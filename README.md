@@ -155,6 +155,22 @@ node scripts/release.mjs --skip-boot-test
 > 每次发布都会**重新自动扫描**依赖：DSH 源码更新后，新依赖自动保留、
 > 新垃圾自动裁剪，无需手动维护清单。
 
+### GitHub Actions
+
+仓库内置两个工作流：
+
+- **CI**（`.github/workflows/ci.yml`）：push/PR 时校验脚本语法、空白、无机器路径。
+- **Release**（`.github/workflows/release.yml`）：打 `v*` tag 或手动触发 → Windows
+  构建 → 上传安装包并创建 GitHub Release。
+
+```bash
+# 触发发布（推 tag 即可，例如）
+git tag v0.2.0
+git push origin v0.2.0
+```
+
+> 首次构建较慢（CI 全量编译），cargo registry 已缓存；后续相同依赖复用。
+
 ### 产物
 
 - 安装包：`src-tauri/target/release/bundle/nsis/DSH Desktop_0.1.0_x64-setup.exe`（约 57 MB）
