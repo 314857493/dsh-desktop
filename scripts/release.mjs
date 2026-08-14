@@ -17,9 +17,9 @@
  * Artifact: src-tauri/target/release/bundle/nsis/DSH Desktop_*_x64-setup.exe
  */
 import { spawnSync } from 'node:child_process'
-import { copyFileSync, existsSync, mkdirSync, readdirSync, rmSync, statSync } from 'node:fs'
+import { copyFileSync, cpSync, existsSync, mkdirSync, readdirSync, rmSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { delimiter, dirname, join } from 'node:path'
+import { basename, delimiter, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 // Ensure the Rust toolchain is reachable (rustup default location) for tauri build.
@@ -38,13 +38,16 @@ const stamp = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14)
 
 const args = process.argv.slice(2)
 const flag = (name) => args.includes(name)
-const value = (name) => args[args.indexOf(name) + 1]
+const value = (name) => {
+  const at = args.indexOf(name)
+  return at !== -1 ? args[at + 1] : undefined
+}
 const REBUILD = flag('--rebuild-repo')
 const INSTALL = flag('--install')
 const SKIP_BOOT = flag('--skip-boot-test')
 const USE_LOCAL = flag('--local') || args.includes('--repo')
-const repoArg = args[args.indexOf('--repo') + 1]
-const projectArg = args[args.indexOf('--project') + 1]
+const repoArg = value('--repo')
+const projectArg = value('--project')
 const REMOTE_URL = value('--remote-url') ?? 'https://github.com/deepseek-ai/deepseek-harness.git'
 const REF = value('--ref') ?? 'master'
 const PROJECT = projectArg ?? project
@@ -60,11 +63,11 @@ function git(dir, cmdArgs, opts = {}) {
 
 function fetchRemote() {
   if (!existsSync(cacheDir)) {
-    step('0/10 fetch remote DSH source (clone)')
+    step('0/11 fetch remote DSH source (clone)')
     console.log(`$ git clone --depth 1 ${REMOTE_URL} ${cacheDir}`)
     git(null, ['clone', '--depth', '1', REMOTE_URL, cacheDir])
   } else {
-    step('0/10 fetch remote DSH source (update)')
+    step('0/11 fetch remote DSH source (update)')
     git(cacheDir, ['fetch', '--depth', '1', 'origin', REF])
   }
   // Detach at the requested ref (branch, tag, or commit sha).
@@ -80,6 +83,68 @@ if (USE_LOCAL) {
   console.log(`mode: LOCAL checkout ${REPO} (use --remote or drop --local to fetch from the remote)`)
 } else {
   REPO = fetchRemote()
+}
+
+// ---------- node-runtime: core Node copied from the system install (no download) ----------
+function resolveUserNodeDir() {
+  // Persistent installs first (fnm node-versions, Program Files) — skip
+  // ephemeral PATH shims (fnm multishell) so the result survives shell sessions.
+  const candidates = []
+  for (const base of [process.env.APPDATA, process.env.LOCALAPPDATA]) {
+    if (!base) continue
+    const versions = join(base, 'fnm', 'node-versions')
+    if (!existsSync(versions)) continue
+    for (const entry of readdirSync(versions)) {
+      const dir = join(versions, entry, 'installation')
+      if (existsSync(join(dir, 'node.exe'))) candidates.push(dir)
+    }
+  }
+  if (candidates.length > 0) {
+    candidates.sort((a, b) => {
+      const v = (p) => (basename(dirname(p)).match(/\d+(?:\.\d+)*/g) ?? []).join('.')
+      return v(b).localeCompare(v(a), undefined, { numeric: true })
+    })
+    return candidates[0]
+  }
+  for (const dir of ['C:\\Program Files\\nodejs', 'C:\\Program Files (x86)\\nodejs']) {
+    if (existsSync(join(dir, 'node.exe'))) return dir
+  }
+  return null
+}
+
+// Only the files a bundled runtime needs: node.exe, npm/npx/corepack and their
+// own node_modules. This avoids dragging in the user's globally installed
+// packages (fnm's node_modules can hold hundreds of MB of globals).
+const NODE_ESSENTIAL_FILES = [
+  'node.exe', 'npm', 'npm.cmd', 'npm.ps1', 'npx', 'npx.cmd', 'npx.ps1',
+  'corepack', 'corepack.cmd', 'nodevars.bat', 'install_tools.bat',
+  'LICENSE', 'CHANGELOG.md', 'README.md',
+]
+const NODE_ESSENTIAL_MODULES = ['npm', 'corepack']
+
+function ensureNodeRuntime() {
+  if (existsSync(join(nodeRuntime, 'node.exe'))) {
+    console.log(`node-runtime already present (${nodeRuntime})`)
+    return
+  }
+  const dir = resolveUserNodeDir()
+  if (!dir) {
+    fail('未找到系统 Node.js：无法生成 node-runtime。请先安装 Node.js >= 22，或手动把 node 目录放到 node-runtime/')
+  }
+  rmSync(nodeRuntime, { recursive: true, force: true })
+  mkdirSync(nodeRuntime, { recursive: true })
+  for (const name of NODE_ESSENTIAL_FILES) {
+    const from = join(dir, name)
+    if (existsSync(from)) copyFileSync(from, join(nodeRuntime, name))
+  }
+  mkdirSync(join(nodeRuntime, 'node_modules'), { recursive: true })
+  for (const name of NODE_ESSENTIAL_MODULES) {
+    const from = join(dir, 'node_modules', name)
+    if (existsSync(from)) {
+      cpSync(from, join(nodeRuntime, 'node_modules', name), { recursive: true })
+    }
+  }
+  console.log(`node-runtime: core Node copied from ${dir}`)
 }
 
 const rtDir = join(PROJECT, 'rt')
@@ -110,20 +175,20 @@ if (!existsSync(join(PROJECT, 'src-tauri', 'tauri.conf.json'))) fail(`project no
 // built; pass --rebuild-repo to force.
 if (USE_LOCAL) {
   if (REBUILD) {
-    step('0/10 rebuild DSH repo (pnpm run build)')
+    step('0/11 rebuild DSH repo (pnpm run build)')
     run('repo build', 'pnpm', ['run', 'build'], { cwd: REPO })
   } else {
     console.log(`skip repo rebuild (using current build artifacts in ${REPO}); add --rebuild-repo for a fully fresh release`)
   }
 } else {
-  step('1/10 pnpm install (frozen lockfile)')
+  step('1/11 pnpm install (frozen lockfile)')
   run('pnpm install', 'pnpm', ['install', '--frozen-lockfile'], { cwd: REPO })
-  step('2/10 build DSH repo (pnpm run build)')
+  step('2/11 build DSH repo (pnpm run build)')
   run('repo build', 'pnpm', ['run', 'build'], { cwd: REPO })
 }
 
 // ---------- 1. pnpm deploy -> rt ----------
-step('3/10 pnpm deploy -> rt')
+step('3/11 pnpm deploy -> rt')
 if (existsSync(rtDir)) {
   console.log('cleaning old rt...')
   rmSync(rtDir, { recursive: true, force: true })
@@ -131,20 +196,20 @@ if (existsSync(rtDir)) {
 run('pnpm deploy', 'pnpm', ['--filter', '@deepseek-ai/dsh', 'deploy', '--legacy', '--config.node-linker=hoisted', rtDir], { cwd: REPO })
 
 // ---------- 2. patch runtime deps ----------
-step('4/10 patch-runtime (restore runtime-needed devDeps)')
+step('4/11 patch-runtime (restore runtime-needed devDeps)')
 runNode('patch-runtime', join(here, 'patch-runtime.mjs'), [rtDir, REPO])
 
 // ---------- 3. ensure-fallback ----------
-step('5/10 install ensure-fallback script')
+step('5/11 install ensure-fallback script')
 mkdirSync(join(rtDir, 'scripts'), { recursive: true })
 copyFileSync(join(here, 'ensure-fallback.mjs'), join(rtDir, 'scripts', 'ensure-fallback.mjs'))
 
 // ---------- 4. trim maps/types/sources ----------
-step('6/10 trim-runtime (strip maps/d.ts/sources)')
+step('6/11 trim-runtime (strip maps/d.ts/sources)')
 runNode('trim-runtime', join(here, 'trim-runtime.mjs'), [rtDir])
 
 // ---------- 5. prune orphan deps (back up the previous installer first) ----------
-step('7/10 prune-rt (remove runtime-unneeded orphan deps)')
+step('7/11 prune-rt (remove runtime-unneeded orphan deps)')
 const nsisDir = join(PROJECT, 'src-tauri', 'target', 'release', 'bundle', 'nsis')
 const installers = existsSync(nsisDir) ? readdirSync(nsisDir).filter((f) => f.endsWith('-setup.exe')).map((f) => join(nsisDir, f)) : []
 if (installers.length > 0) {
@@ -155,10 +220,14 @@ if (installers.length > 0) {
 }
 runNode('prune-rt', join(here, 'prune-rt.mjs'), [rtDir, backup])
 
-// ---------- 6. runtime smoke test ----------
+// ---------- 6. ensure node-runtime (copy core Node from system) ----------
+step('8/11 ensure node-runtime (copy core Node from system)')
+ensureNodeRuntime()
+
+// ---------- 7. runtime smoke test ----------
 if (!SKIP_BOOT) {
-  step('8/10 boot-test (runtime smoke test)')
-  const nodeExe = existsSync(join(nodeRuntime, 'node.exe')) ? join(nodeRuntime, 'node.exe') : process.execPath
+  step('9/11 boot-test (runtime smoke test)')
+  const nodeExe = join(nodeRuntime, 'node.exe')
   const testHome = join(PROJECT, `.dsh-boot-test-${stamp}`)
   runNode('boot-test', join(here, 'boot-test.mjs'), [nodeExe, rtDir, testHome])
   rmSync(testHome, { recursive: true, force: true })
@@ -166,8 +235,8 @@ if (!SKIP_BOOT) {
   console.log('skipping smoke test (--skip-boot-test)')
 }
 
-// ---------- 7. build ----------
-step('9/10 tauri build')
+// ---------- 8. build ----------
+step('10/11 tauri build')
 const tauriOk = spawnSync('tauri', ['build'], { stdio: 'inherit', shell: true, cwd: PROJECT })
 console.log(`[tauri] status=${tauriOk.status} signal=${tauriOk.signal}`)
 if (tauriOk.status !== 0) {

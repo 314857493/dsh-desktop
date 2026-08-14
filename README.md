@@ -99,6 +99,10 @@ node scripts/release.mjs --skip-boot-test
 远程源码缓存在 `repo-cache/deepseek-harness/`（浅克隆，后续运行增量 fetch，不触碰
 本机开发用的 checkout）。
 
+**内置 Node 运行时**：`release.mjs` 会从系统 Node 安装中**复制核心文件**
+（`node.exe` + npm/npx/corepack，约 100 MB）到 `node-runtime/`——**无需下载**，
+也不会把全局安装的 npm 包带进安装包。打包时随安装包一并分发，最终用户无需装 Node。
+
 ### 两种源码来源
 
 | 模式 | 行为 | 适用 |
