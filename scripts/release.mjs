@@ -6,7 +6,7 @@
  *   node scripts/release.mjs                          # fetch remote master, build, package
  *   node scripts/release.mjs --ref v0.1.0             # release a specific tag/branch/commit
  *   node scripts/release.mjs --local                  # use the local checkout instead of fetching
- *   node scripts/release.mjs --repo D:\deepseek-harness
+ *   node scripts/release.mjs --repo <本地 DSH 源码路径>
  *   node scripts/release.mjs --remote-url <url>       # custom remote
  *   node scripts/release.mjs --install                # silently install after build
  *   node scripts/release.mjs --skip-boot-test         # skip the runtime smoke test
