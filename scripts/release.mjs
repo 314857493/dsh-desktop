@@ -62,18 +62,33 @@ function git(dir, cmdArgs, opts = {}) {
 }
 
 function fetchRemote() {
+  // Resolve the requested ref to a commit sha up front. Modern git no longer
+  // writes .git/FETCH_HEAD for `git clone`/shallow fetches, so FETCH_HEAD must
+  // not be relied on. `ls-remote <ref> <ref>^{}` peels annotated tags.
+  let sha
+  if (/^[0-9a-f]{7,40}$/i.test(REF)) {
+    sha = REF // caller passed a commit sha directly
+  } else {
+    const ls = spawnSync('git', ['ls-remote', REMOTE_URL, REF, `${REF}^{}`], { encoding: 'utf8' })
+    if (ls.status !== 0 || !ls.stdout?.trim()) fail(`无法解析远程引用 ${REF}（${REMOTE_URL}）`)
+    const lines = ls.stdout.split('\n').filter(Boolean)
+    const peeled = lines.find((l) => l.includes('^{}'))
+    const plain = lines.find((l) => !l.includes('^{}'))
+    sha = (peeled ?? plain)?.split('\t')[0]
+    if (!sha) fail(`无法解析远程引用 ${REF}（${REMOTE_URL}）`)
+  }
+
   if (!existsSync(cacheDir)) {
     step('0/11 fetch remote DSH source (clone)')
     console.log(`$ git clone --depth 1 ${REMOTE_URL} ${cacheDir}`)
     git(null, ['clone', '--depth', '1', REMOTE_URL, cacheDir])
   } else {
     step('0/11 fetch remote DSH source (update)')
-    git(cacheDir, ['fetch', '--depth', '1', 'origin', REF])
   }
-  // Detach at the requested ref (branch, tag, or commit sha).
-  git(cacheDir, ['checkout', '--detach', 'FETCH_HEAD', '--force'])
-  const head = spawnSync('git', ['rev-parse', '--short', 'HEAD'], { cwd: cacheDir, encoding: 'utf8' })
-  console.log(`source: ${REMOTE_URL} @ ${REF} (${head.stdout?.trim() ?? '?'})`)
+  // Bring in the exact commit and move the worktree to it (no FETCH_HEAD).
+  git(cacheDir, ['fetch', '--depth', '1', 'origin', sha])
+  git(cacheDir, ['reset', '--hard', sha])
+  console.log(`source: ${REMOTE_URL} @ ${REF} (${sha.slice(0, 7)})`)
   return cacheDir
 }
 
