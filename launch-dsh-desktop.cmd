@@ -1,7 +1,11 @@
 @echo off
-rem Launch the DSH Desktop app (green exe).
-rem Optional: pass --dsh-root / --node / --home args, e.g.:
-rem   "%~dp0dsh-desktop.exe" --dsh-root <本地DSH源码路径>
+rem Launcher for the portable DSH Desktop build (dsh-desktop.exe).
+rem Optional args: --dsh-root <path> [--node <path>] [--home <path>]
 setlocal
 cd /d "%~dp0"
+if not exist "%~dp0dsh-desktop.exe" (
+  echo dsh-desktop.exe not found. Build it first: node scripts/release.mjs
+  pause
+  exit /b 1
+)
 start "" "%~dp0dsh-desktop.exe" %*
