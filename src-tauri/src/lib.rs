@@ -193,7 +193,8 @@ fn bundled_runtime(app: &AppHandle) -> Option<PathBuf> {
 
 fn bundled_node(app: &AppHandle) -> Option<PathBuf> {
     let res = app.path().resource_dir().ok()?;
-    let node = normalize_path(res.join("node").join("node.exe"));
+    let exe_name = if cfg!(windows) { "node.exe" } else { "node" };
+    let node = normalize_path(res.join("node").join(exe_name));
     if node.is_file() {
         Some(node)
     } else {
@@ -266,23 +267,38 @@ fn resolve_node(app: &AppHandle, configured: Option<String>) -> Result<PathBuf, 
     }
 
     // 1) node on PATH (fnm multishell shims resolve to real node.exe here).
-    let mut where_command = Command::new("where");
-    where_command.arg("node.exe");
-    hide_console(&mut where_command);
-    if let Ok(output) = where_command.output() {
-        if output.status.success() {
-            let text = String::from_utf8_lossy(&output.stdout);
-            if let Some(first) = text.lines().next() {
-                let node = PathBuf::from(first.trim());
-                if node.is_file() {
-                    return Ok(node);
-                }
+    let node_on_path = || -> Option<PathBuf> {
+        #[cfg(windows)]
+        {
+            let mut where_command = Command::new("where");
+            where_command.arg("node.exe");
+            hide_console(&mut where_command);
+            let output = where_command.output().ok()?;
+            if !output.status.success() {
+                return None;
             }
+            let text = String::from_utf8_lossy(&output.stdout);
+            let node = PathBuf::from(text.lines().next()?.trim());
+            node.is_file().then_some(node)
         }
+        #[cfg(not(windows))]
+        {
+            let output = Command::new("which").arg("node").output().ok()?;
+            if !output.status.success() {
+                return None;
+            }
+            let text = String::from_utf8_lossy(&output.stdout);
+            let node = PathBuf::from(text.lines().next()?.trim());
+            node.is_file().then_some(node)
+        }
+    };
+    if let Some(node) = node_on_path() {
+        return Ok(node);
     }
 
-    // 2) fnm-installed node versions, highest version wins.
+    // 2) fnm-installed node versions, highest version wins (Windows-only layout).
     let mut candidates: Vec<PathBuf> = Vec::new();
+    #[cfg(windows)]
     for base in [env::var("APPDATA"), env::var("LOCALAPPDATA")]
         .into_iter()
         .flatten()

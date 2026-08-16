@@ -4,7 +4,9 @@
 //      orphan packages (catches runtime-needed packages DSH never declares).
 //   3. Keep: closure + referenced orphans + their transitive deps (e.g. tsx -> esbuild).
 //   4. Move everything else to the trash dir (recoverable).
-import { readFileSync, readdirSync, existsSync, mkdirSync, renameSync, rmSync, statSync } from 'node:fs'
+//   5. Remove dangling symlinks (pnpm .bin shims whose targets were pruned) —
+//      tauri-build's resource walker rejects them on unix.
+import { readFileSync, readdirSync, existsSync, mkdirSync, realpathSync, renameSync, rmSync, statSync, unlinkSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -153,3 +155,52 @@ for (const { name, info } of orphans) {
 console.log(`closure: ${closure.size} packages; orphans: ${orphans.length}`)
 console.log(`kept (referenced by runtime code): ${[...referenced].join(', ')}`)
 console.log(`removed ${removedCount} packages, ${removedMB.toFixed(1)} MB -> ${trash}`)
+
+// ---- sweep dangling symlinks under node_modules/.bin ----------------------
+let swept = 0
+function sweepDangling(dir) {
+  let entries
+  try { entries = readdirSync(dir, { withFileTypes: true }) } catch { return }
+  for (const e of entries) {
+    const p = join(dir, e.name)
+    if (e.isSymbolicLink()) {
+      try { realpathSync(p) } catch {
+        try { unlinkSync(p) } catch {}
+        swept++
+      }
+    } else if (e.isDirectory()) {
+      sweepDangling(p)
+    }
+  }
+}
+sweepDangling(join(nm, '.bin'))
+if (swept > 0) console.log(`removed ${swept} dangling symlinks (node_modules/.bin)`)
+
+// ---- remove musl (Alpine) native variants ----------------------------------
+// Packages like koffi ship both glibc and musl builds; linuxdeploy aborts when
+// it finds the musl build on a glibc distro ("Could not find dependency:
+// libc.musl-x86_64.so.1"). They are never usable here — drop them.
+let muslRemoved = 0
+function sweepMusl(dir) {
+  let entries
+  try { entries = readdirSync(dir, { withFileTypes: true }) } catch { return }
+  for (const e of entries) {
+    const p = join(dir, e.name)
+    const isMusl = e.name.toLowerCase().includes('musl')
+    if (e.isDirectory()) {
+      if (isMusl) {
+        rmSync(p, { recursive: true, force: true })
+        muslRemoved++
+      } else {
+        sweepMusl(p)
+      }
+    } else if (isMusl) {
+      try { unlinkSync(p) } catch {}
+      muslRemoved++
+    }
+  }
+}
+sweepMusl(nm)
+if (muslRemoved > 0) console.log(`removed ${muslRemoved} musl (Alpine) native variants`)
+
+

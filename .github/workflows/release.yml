@@ -9,8 +9,12 @@ permissions:
   contents: write
 
 jobs:
-  release:
-    runs-on: windows-latest
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-22.04]
+    runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -25,8 +29,21 @@ jobs:
         with:
           version: 11.7.0
 
-      - name: Setup Rust (MSVC toolchain preinstalled on windows-latest)
+      - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libgtk-3-dev
+          # AppImage linuxdeploy needs FUSE; package renamed on 24.04.
+          sudo apt-get install -y libfuse2 || sudo apt-get install -y libfuse2t64
 
       - name: Cache cargo registry
         uses: actions/cache@v4
@@ -43,16 +60,36 @@ jobs:
         run: node scripts/release.mjs
         env:
           CI: "true"
+          # linuxdeploy on CI: avoid FUSE (extract-and-run), skip strip issues,
+          # and keep verbose output so bundler failures surface the real error.
+          APPIMAGE_EXTRACT_AND_RUN: "1"
+          NO_STRIP: "true"
+          TAURI_VERBOSE: "1"
 
-      - name: Upload installer artifact
+      - name: Upload bundle artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: dsh-desktop-installer
-          path: src-tauri/target/release/bundle/nsis/*-setup.exe
+          name: dsh-desktop-${{ matrix.os }}
+          path: src-tauri/target/release/bundle/
           if-no-files-found: error
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts/
+          merge-multiple: true
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: src-tauri/target/release/bundle/nsis/*-setup.exe
+          files: |
+            artifacts/**/*-setup.exe
+            artifacts/**/*.dmg
+            artifacts/**/*.deb
+            artifacts/**/*.AppImage
           generate_release_notes: true

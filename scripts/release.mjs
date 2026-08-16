@@ -17,10 +17,13 @@
  * Artifact: src-tauri/target/release/bundle/nsis/DSH Desktop_*_x64-setup.exe
  */
 import { spawnSync } from 'node:child_process'
-import { copyFileSync, cpSync, existsSync, mkdirSync, readdirSync, rmSync, statSync } from 'node:fs'
+import { chmodSync, copyFileSync, cpSync, existsSync, lstatSync, mkdirSync, readdirSync, realpathSync, rmSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, delimiter, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+
+const IS_WIN = process.platform === 'win32'
+const NODE_BIN = IS_WIN ? 'node.exe' : 'node'
 
 // Ensure the Rust toolchain is reachable (rustup default location) for tauri build.
 const cargoBin = join(homedir(), '.cargo', 'bin')
@@ -102,6 +105,15 @@ if (USE_LOCAL) {
 
 // ---------- node-runtime: core Node copied from the system install (no download) ----------
 function resolveUserNodeDir() {
+  if (!IS_WIN) {
+    // Unix: the node running this script is a system install; use its real
+    // path (resolves through symlinks such as homebrew/volta shims).
+    try {
+      return dirname(realpathSync(process.execPath))
+    } catch {
+      return null
+    }
+  }
   // Persistent installs first (fnm node-versions, Program Files) — skip
   // ephemeral PATH shims (fnm multishell) so the result survives shell sessions.
   const candidates = []
@@ -127,18 +139,23 @@ function resolveUserNodeDir() {
   return null
 }
 
-// Only the files a bundled runtime needs: node.exe, npm/npx/corepack and their
-// own node_modules. This avoids dragging in the user's globally installed
-// packages (fnm's node_modules can hold hundreds of MB of globals).
-const NODE_ESSENTIAL_FILES = [
-  'node.exe', 'npm', 'npm.cmd', 'npm.ps1', 'npx', 'npx.cmd', 'npx.ps1',
-  'corepack', 'corepack.cmd', 'nodevars.bat', 'install_tools.bat',
-  'LICENSE', 'CHANGELOG.md', 'README.md',
-]
+// Only the files a bundled runtime needs: the node binary, npm/npx/corepack
+// and their own node_modules. This avoids dragging in the user's globally
+// installed packages (fnm's node_modules can hold hundreds of MB of globals).
+const NODE_ESSENTIAL_FILES = IS_WIN
+  ? [
+      'node.exe', 'npm', 'npm.cmd', 'npm.ps1', 'npx', 'npx.cmd', 'npx.ps1',
+      'corepack', 'corepack.cmd', 'nodevars.bat', 'install_tools.bat',
+      'LICENSE', 'CHANGELOG.md', 'README.md',
+    ]
+  : [
+      'node', 'npm', 'npx', 'corepack',
+      'LICENSE', 'CHANGELOG.md', 'README.md',
+    ]
 const NODE_ESSENTIAL_MODULES = ['npm', 'corepack']
 
 function ensureNodeRuntime() {
-  if (existsSync(join(nodeRuntime, 'node.exe'))) {
+  if (existsSync(join(nodeRuntime, NODE_BIN))) {
     console.log(`node-runtime already present (${nodeRuntime})`)
     return
   }
@@ -150,7 +167,23 @@ function ensureNodeRuntime() {
   mkdirSync(nodeRuntime, { recursive: true })
   for (const name of NODE_ESSENTIAL_FILES) {
     const from = join(dir, name)
-    if (existsSync(from)) copyFileSync(from, join(nodeRuntime, name))
+    if (!existsSync(from)) continue
+    if (!IS_WIN) {
+      // On unix, npm/npx/corepack in the bin dir are often symlinks into
+      // ../lib/node_modules; copying the dereferenced file would yield a
+      // broken wrapper. The bundled node binary is what matters at runtime,
+      // so skip symlinked wrappers.
+      try {
+        if (!lstatSync(from).isFile()) continue
+      } catch {
+        continue
+      }
+    }
+    const to = join(nodeRuntime, name)
+    copyFileSync(from, to)
+    if (!IS_WIN && (name === 'node' || name === 'npm' || name === 'npx' || name === 'corepack')) {
+      try { chmodSync(to, 0o755) } catch {}
+    }
   }
   mkdirSync(join(nodeRuntime, 'node_modules'), { recursive: true })
   for (const name of NODE_ESSENTIAL_MODULES) {
@@ -225,13 +258,15 @@ runNode('trim-runtime', join(here, 'trim-runtime.mjs'), [rtDir])
 
 // ---------- 5. prune orphan deps (back up the previous installer first) ----------
 step('7/11 prune-rt (remove runtime-unneeded orphan deps)')
-const nsisDir = join(PROJECT, 'src-tauri', 'target', 'release', 'bundle', 'nsis')
-const installers = existsSync(nsisDir) ? readdirSync(nsisDir).filter((f) => f.endsWith('-setup.exe')).map((f) => join(nsisDir, f)) : []
-if (installers.length > 0) {
-  mkdirSync(backup, { recursive: true })
-  const bk = join(backup, `setup-${stamp}.exe`)
-  copyFileSync(installers[0], bk)
-  console.log(`previous installer backed up: ${bk}`)
+if (IS_WIN) {
+  const nsisDir = join(PROJECT, 'src-tauri', 'target', 'release', 'bundle', 'nsis')
+  const installers = existsSync(nsisDir) ? readdirSync(nsisDir).filter((f) => f.endsWith('-setup.exe')).map((f) => join(nsisDir, f)) : []
+  if (installers.length > 0) {
+    mkdirSync(backup, { recursive: true })
+    const bk = join(backup, `setup-${stamp}.exe`)
+    copyFileSync(installers[0], bk)
+    console.log(`previous installer backed up: ${bk}`)
+  }
 }
 runNode('prune-rt', join(here, 'prune-rt.mjs'), [rtDir, backup])
 
@@ -242,7 +277,7 @@ ensureNodeRuntime()
 // ---------- 7. runtime smoke test ----------
 if (!SKIP_BOOT) {
   step('9/11 boot-test (runtime smoke test)')
-  const nodeExe = join(nodeRuntime, 'node.exe')
+  const nodeExe = join(nodeRuntime, NODE_BIN)
   const testHome = join(PROJECT, `.dsh-boot-test-${stamp}`)
   runNode('boot-test', join(here, 'boot-test.mjs'), [nodeExe, rtDir, testHome])
   rmSync(testHome, { recursive: true, force: true })
@@ -252,30 +287,53 @@ if (!SKIP_BOOT) {
 
 // ---------- 8. build ----------
 step('10/11 tauri build')
-const tauriOk = spawnSync('tauri', ['build'], { stdio: 'inherit', shell: true, cwd: PROJECT })
+const BUNDLES = IS_WIN
+  ? ['nsis']
+  : process.platform === 'darwin'
+    ? ['dmg', 'app']
+    : ['deb', 'appimage']
+console.log(`bundle targets: ${BUNDLES.join(', ')}`)
+const buildArgs = ['build', '--bundles', ...BUNDLES]
+if (process.env.TAURI_VERBOSE === '1') buildArgs.push('-v')
+const tauriOk = spawnSync('tauri', buildArgs, { stdio: 'inherit', shell: true, cwd: PROJECT })
 console.log(`[tauri] status=${tauriOk.status} signal=${tauriOk.signal}`)
 if (tauriOk.status !== 0) {
   console.log('tauri CLI not on PATH or failed — falling back to npx @tauri-apps/cli')
-  const npx = spawnSync('npx', ['--yes', '@tauri-apps/cli', 'build'], { stdio: 'inherit', shell: true, cwd: PROJECT })
+  const npx = spawnSync('npx', ['--yes', '@tauri-apps/cli', ...buildArgs], { stdio: 'inherit', shell: true, cwd: PROJECT })
   console.log(`[npx] status=${npx.status} signal=${npx.signal}`)
   if (npx.status !== 0) fail(`tauri build failed (exit ${npx.status})`)
 }
 
 // ---------- report ----------
-const finalNsisDir = join(PROJECT, 'src-tauri', 'target', 'release', 'bundle', 'nsis')
-const artifacts = existsSync(finalNsisDir) ? readdirSync(finalNsisDir).filter((f) => f.endsWith('-setup.exe')).map((f) => join(finalNsisDir, f)) : []
-if (artifacts.length === 0) fail('installer artifact not found')
-const artifact = artifacts.sort((a, b) => statSync(b).mtimeMs - statSync(a).mtimeMs)[0]
-const mb = (statSync(artifact).size / 1048576).toFixed(1)
+// Locate the produced distributable(s) for this platform.
+const bundleRoot = join(PROJECT, 'src-tauri', 'target', 'release', 'bundle')
+const artifactGlobs = IS_WIN
+  ? ['nsis/*-setup.exe']
+  : process.platform === 'darwin'
+    ? ['dmg/*.dmg', 'macos/*.app']
+    : ['deb/*.deb', 'appimage/*.AppImage']
+const artifacts = []
+for (const glob of artifactGlobs) {
+  const dir = join(bundleRoot, dirname(glob))
+  if (!existsSync(dir)) continue
+  const suffix = basename(glob).replace('*', '')
+  for (const f of readdirSync(dir)) {
+    if (f.endsWith(suffix)) artifacts.push(join(dir, f))
+  }
+}
+if (artifacts.length === 0) fail('no bundle artifact found')
+artifacts.sort((a, b) => statSync(b).mtimeMs - statSync(a).mtimeMs)
+const primary = artifacts[0]
+const mb = (statSync(primary).size / 1048576).toFixed(1)
 console.log('\n================ RELEASE COMPLETE ================')
-console.log(`installer: ${artifact}`)
-console.log(`size     : ${mb} MB`)
-console.log(`time     : ${new Date().toISOString()}`)
+console.log(`artifact: ${primary}`)
+console.log(`size    : ${mb} MB`)
+console.log(`time    : ${new Date().toISOString()}`)
 
 if (INSTALL) {
-  if (process.platform !== 'win32') fail('--install is only supported on Windows')
+  if (!IS_WIN) fail('--install is only supported on Windows')
   console.log('\nsilent install...')
-  const p = spawnSync(artifact, ['/S'], { stdio: 'inherit', shell: false })
+  const p = spawnSync(primary, ['/S'], { stdio: 'inherit', shell: false })
   if (p.status !== 0) fail(`install failed (exit ${p.status})`)
   console.log('installed.')
 }
