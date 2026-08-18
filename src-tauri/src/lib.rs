@@ -119,7 +119,7 @@ const WINDOW_OPEN_SHIM: &str = r#"
 /// Managed handle to the spawned server process (killed on app exit).
 struct ServerHandle(Mutex<Option<Child>>);
 
-/// Where the app writes its diagnostics (next to the exe).
+/// Where the app writes its diagnostics (the OS app-log directory).
 static LOG_PATH: OnceLock<PathBuf> = OnceLock::new();
 
 /// tauri's resource/executable dirs can return `\\?\`-prefixed paths on NSIS
@@ -415,8 +415,12 @@ fn spawn_server(
     command.env("DSH_HOME", &dsh_home);
     // Make node findable by any child process the server spawns.
     if let Some(dir) = node.parent() {
-        let path = env::var("PATH").unwrap_or_default();
-        command.env("PATH", format!("{};{path}", dir.display()));
+        let current_path = env::var_os("PATH").unwrap_or_default();
+        let mut search_paths = vec![dir.to_path_buf()];
+        search_paths.extend(env::split_paths(&current_path));
+        if let Ok(joined) = env::join_paths(search_paths) {
+            command.env("PATH", joined);
+        }
     }
     hide_console(&mut command);
 
@@ -555,11 +559,12 @@ pub fn run() {
         })
         .setup(|app| {
             let handle = app.handle();
-            // Diagnostics live next to the exe so they are easy to find.
-            if let Ok(exe) = std::env::current_exe() {
-                if let Some(dir) = exe.parent() {
-                    let _ = LOG_PATH.set(dir.join("dsh-desktop.log"));
-                }
+            // Never write into the installed application bundle: doing so
+            // invalidates its macOS code signature (and AppImage mounts are
+            // read-only). Keep diagnostics in the platform app-log directory.
+            if let Ok(dir) = handle.path().app_log_dir() {
+                let _ = fs::create_dir_all(&dir);
+                let _ = LOG_PATH.set(dir.join("dsh-desktop.log"));
             }
             log("=== DSH Desktop start ===");
             let config = load_config(handle);

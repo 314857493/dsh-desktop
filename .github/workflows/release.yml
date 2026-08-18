@@ -62,11 +62,32 @@ jobs:
         run: node scripts/release.mjs ${{ github.ref_type == 'tag' && format('--version {0}', github.ref_name) || '' }}
         env:
           CI: "true"
+          # Optional production macOS signing/notarization secrets. Tauri
+          # ignores these on other platforms. release.mjs falls back to a
+          # complete ad-hoc signature when APPLE_SIGNING_IDENTITY is empty.
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           # linuxdeploy on CI: avoid FUSE (extract-and-run), skip strip issues,
           # and keep verbose output so bundler failures surface the real error.
           APPIMAGE_EXTRACT_AND_RUN: "1"
           NO_STRIP: "true"
           TAURI_VERBOSE: "1"
+
+      - name: Verify macOS app signature
+        if: runner.os == 'macOS'
+        run: |
+          set -euo pipefail
+          app_path="$(find src-tauri/target/release/bundle/macos -maxdepth 1 -name '*.app' -print -quit)"
+          if [ -z "$app_path" ]; then
+            echo "macOS app bundle not found" >&2
+            exit 1
+          fi
+          codesign --verify --deep --strict --verbose=2 "$app_path"
+          codesign -dvv "$app_path"
 
       - name: Upload bundle artifacts
         uses: actions/upload-artifact@v4

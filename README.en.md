@@ -142,6 +142,30 @@ Remote source is cached in `repo-cache/deepseek-harness/` (shallow clone; subseq
 
 > Every release **re-scans dependencies automatically**: when DSH updates, new deps are kept and new garbage is pruned — no manual maintenance.
 
+### GitHub Actions and macOS signing
+
+The release workflow builds and publishes Windows, macOS, and Linux bundles. macOS
+builds use a full ad-hoc app signature by default so Apple Silicon does not report
+browser-downloaded bundles as damaged. For public distribution, configure all of
+the following repository secrets: `APPLE_SIGNING_IDENTITY`, `APPLE_CERTIFICATE`,
+`APPLE_CERTIFICATE_PASSWORD`, `APPLE_ID`, `APPLE_PASSWORD`, and `APPLE_TEAM_ID`.
+Tauri will then use the Developer ID certificate and submit the app for Apple
+notarization. An ad-hoc signature only makes the bundle signature structurally
+valid; users may still need to allow the first launch in Privacy & Security.
+
+#### macOS says the app is damaged
+
+Older DMGs did not sign the complete `.app` bundle. After confirming the installer
+came from a trusted project release, drag the app to Applications and run once:
+
+```bash
+xattr -dr com.apple.quarantine "/Applications/DSH Desktop.app"
+open "/Applications/DSH Desktop.app"
+```
+
+This bypass is only for legacy artifacts. Downloading a newly built, correctly
+signed release is the preferred long-term fix.
+
 ### Artifacts
 
 - Installer: `src-tauri/target/release/bundle/nsis/DSH Desktop_0.1.0_x64-setup.exe` (~57 MB)
@@ -188,7 +212,7 @@ dsh-desktop/
 
 ## Troubleshooting
 
-- **App log**: `dsh-desktop.log` next to the exe (server stdout/stderr, startup resolution info).
+- **App log**: `dsh-desktop.log` in the platform app-log directory (server stdout/stderr and startup resolution info).
 - **Session history fails to load** (`corrupt session log: seq gap ...`): caused by two instances writing the same session. Fix with `node scripts/repair-session-log.mjs <session.jsonl.zstd>` (keeps the live timeline and aligns with the running instance's counter); back up the file first.
 - **Desktop icon does not update**: clear the Windows icon cache (delete `IconCache.db` and restart Explorer); shortcuts already point at the standalone `dsh-desktop.ico`.
 - **External link clicks do nothing**: the opener plugin depends on the remote capability (see How It Works). Make sure the installed build includes `capabilities/remote-opener.json` (from `v0.2.x`); reinstall if you are on an older build.

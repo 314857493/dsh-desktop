@@ -167,8 +167,15 @@ node scripts/release.mjs --version 0.1.4   # 产物版本号（同步 tauri.conf
 仓库内置两个工作流：
 
 - **CI**（`.github/workflows/ci.yml`）：push/PR 时校验脚本语法、空白、无机器路径。
-- **Release**（`.github/workflows/release.yml`）：打 `v*` tag 或手动触发 → Windows
-  构建 → 上传安装包并创建 GitHub Release。
+- **Release**（`.github/workflows/release.yml`）：打 `v*` tag 或手动触发 → Windows、
+  macOS、Linux 构建 → 上传安装包并创建 GitHub Release。
+
+macOS 构建至少使用 ad-hoc 身份签署完整 `.app`，避免 Apple Silicon 将从浏览器
+下载的产物误报为“已损坏”。对外正式发布时，请在仓库 Secrets 中同时配置
+`APPLE_SIGNING_IDENTITY`、`APPLE_CERTIFICATE`、`APPLE_CERTIFICATE_PASSWORD`、
+`APPLE_ID`、`APPLE_PASSWORD` 和 `APPLE_TEAM_ID`；Tauri 会改用 Developer ID
+签名并提交 Apple 公证。ad-hoc 签名只保证 bundle 签名完整，不能提供开发者身份
+验证，用户仍可能需要在“系统设置 → 隐私与安全性”中明确允许首次打开。
 
 ```bash
 # 触发发布（推 tag 即可，例如）
@@ -177,6 +184,19 @@ git push origin v0.2.0
 ```
 
 > 首次构建较慢（CI 全量编译），cargo registry 已缓存；后续相同依赖复用。
+
+### macOS 提示“已损坏，无法打开”
+
+旧版本 DMG 没有给完整 `.app` 签名。确认安装包来自本项目可信的 Release 后，
+先把应用拖入“应用程序”，再执行一次：
+
+```bash
+xattr -dr com.apple.quarantine "/Applications/DSH Desktop.app"
+open "/Applications/DSH Desktop.app"
+```
+
+这只用于绕过旧产物的 Gatekeeper 隔离；重新下载采用上述签名流程构建的新版本
+是更合适的长期处理方式。
 
 ### 产物
 
@@ -235,7 +255,7 @@ dsh-desktop/
 
 ## 故障排查
 
-- **应用日志**：exe 旁边的 `dsh-desktop.log`（服务器 stdout/stderr、启动解析信息）。
+- **应用日志**：系统应用日志目录中的 `dsh-desktop.log`（服务器 stdout/stderr、启动解析信息）。
 - **会话历史加载失败**（`corrupt session log: seq gap ...`）：双实例写同一会话所致。
   用 `node scripts/repair-session-log.mjs <session.jsonl.zstd>` 修复（自动保留实时
   时间线、与运行中实例计数器对齐），原文件先备份。

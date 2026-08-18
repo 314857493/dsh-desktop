@@ -315,6 +315,28 @@ if (!SKIP_BOOT) {
 
 // ---------- 8. build ----------
 step('10/11 tauri build')
+// A bare Apple Silicon executable only has the linker-generated signature.
+// Without a signing identity Tauri does not sign the completed .app bundle,
+// so Gatekeeper reports browser-downloaded DMGs as damaged.  A configured
+// Developer ID identity still takes precedence; otherwise produce a complete
+// ad-hoc signature that users can explicitly allow in Privacy & Security.
+if (process.platform === 'darwin' && !process.env.APPLE_SIGNING_IDENTITY?.trim()) {
+  process.env.APPLE_SIGNING_IDENTITY = '-'
+  console.log('macOS signing identity: ad hoc (set APPLE_SIGNING_IDENTITY for Developer ID)')
+}
+if (process.platform === 'darwin') {
+  // Some cross-platform terminals export C.UTF-8, which macOS does not ship.
+  // create-dmg invokes Perl while preparing the volume icon; Perl aborts on
+  // that locale and leaves the read-write image mounted.  The portable C
+  // locale is sufficient for the bundler and is guaranteed to exist.
+  process.env.LC_ALL = 'C'
+  process.env.LANG = 'C'
+  delete process.env.LC_CTYPE
+  // Tauri's CI mode passes --skip-jenkins to create-dmg. This avoids Finder
+  // Apple-event automation, which is commonly denied for terminals and CI
+  // runners; the Applications link and volume icon are still included.
+  process.env.CI ||= 'true'
+}
 const BUNDLES = IS_WIN
   ? ['nsis']
   : process.platform === 'darwin'
@@ -351,6 +373,19 @@ for (const glob of artifactGlobs) {
 }
 if (artifacts.length === 0) fail('no bundle artifact found')
 artifacts.sort((a, b) => statSync(b).mtimeMs - statSync(a).mtimeMs)
+
+if (process.platform === 'darwin') {
+  const appBundle = artifacts.find((artifact) => artifact.endsWith('.app'))
+  if (!appBundle) fail('macOS app bundle not found for signature verification')
+  console.log(`verifying macOS app signature: ${appBundle}`)
+  const verified = spawnSync(
+    'codesign',
+    ['--verify', '--deep', '--strict', '--verbose=2', appBundle],
+    { stdio: 'inherit', shell: false },
+  )
+  if (verified.status !== 0) fail(`macOS app signature verification failed (exit ${verified.status})`)
+}
+
 const primary = artifacts[0]
 const mb = (statSync(primary).size / 1048576).toFixed(1)
 console.log('\n================ RELEASE COMPLETE ================')
