@@ -11,6 +11,7 @@ This project does **not modify the DSH core** — the agent loop, tool calling, 
 - 🖥️ **One-click desktop launch** — double-click to run; no console popups (child processes use `CREATE_NO_WINDOW`)
 - 🔒 **Isolated data directory** — uses a dedicated `~/.dsh-desktop` by default, separate from the browser GUI (`~/.dsh`), avoiding session-log corruption from two instances writing the same session
 - 🧹 **Reliable process cleanup** — kills the process tree with `taskkill /T /F` on exit plus a Windows Job Object with kill-on-close (even if the app is force-killed or crashes, the OS cleans up the server tree — no orphans)
+- 🔗 **External links go to the system browser** — links in answers/settings open in the default browser (opener plugin + a loopback remote capability); the config file opens in the default editor
 - 📦 **Self-contained distribution** — bundles a Node.js runtime and a pruned DSH runtime; end users install nothing
 - ⚙️ **Configurable** — four-level precedence: bundled resources < config file < env vars < CLI args
 - 🔄 **Tracks upstream** — the release script pulls DSH source from the official repository and can pin a tag/branch
@@ -148,6 +149,9 @@ Remote source is cached in `repo-cache/deepseek-harness/` (shallow clone; subseq
 4. It watches the child's stdout for the readiness line `dsh web: http://127.0.0.1:<port>` and navigates the WebView there.
 5. On exit it kills the process tree with `taskkill /T /F`; the child is also in a Windows Job Object with kill-on-close — the server is cleaned up no matter how the app exits (close/crash/force-kill).
 
+**Opening external links**: the DSH frontend renders external links with `target="_blank"`; the opener plugin's injected script intercepts the click and calls the Tauri IPC so the system default browser opens the URL. Because the page lives at `http://127.0.0.1:<port>` (a remote origin from Tauri's point of view), the `capabilities/remote-opener.json` remote capability must allow `plugin:opener|open_url` — otherwise the ACL silently rejects the click and nothing happens.
+**Opening the config file**: goes through the DSH server's `settings.openDocument` → the OS default application (Windows relies on the `.yaml`/`.yml` file association — see Troubleshooting).
+
 ## Project Structure
 
 ```
@@ -155,6 +159,7 @@ dsh-desktop/
 ├── src-tauri/            # Tauri shell (Rust)
 │   ├── src/lib.rs        # config resolution / server launch / navigation / process cleanup
 │   ├── tauri.conf.json   # window, resources (rt→dsh, node-runtime→node, icon.ico)
+│   ├── capabilities/     # permissions: default + remote-opener (loopback URL may open external links)
 │   ├── nsis/hooks.nsh    # desktop shortcut on install (points at the standalone ico)
 │   └── icons/            # icon assets (generated from the official SVG)
 ├── dist/                 # splash page (loading page shown before the server is ready)
@@ -167,6 +172,7 @@ dsh-desktop/
 │   ├── boot-test.mjs          # runtime smoke test
 │   ├── gen-app-icon-svg.mjs   # generates icons from the official SVG (uses glyph-path.txt)
 │   ├── repair-session-log.mjs # session-log repair (rebuilds contiguous seq after dual-writer corruption)
+│   ├── test-open-document.mjs # e2e check of the open-config-file path (TEST_NODE/TEST_BIN point at a runtime)
 │   └── analyze-session-log.mjs # session-log structure analysis
 ├── launch-dsh-desktop.cmd # portable launcher
 └── README.md
@@ -179,4 +185,13 @@ dsh-desktop/
 - **App log**: `dsh-desktop.log` next to the exe (server stdout/stderr, startup resolution info).
 - **Session history fails to load** (`corrupt session log: seq gap ...`): caused by two instances writing the same session. Fix with `node scripts/repair-session-log.mjs <session.jsonl.zstd>` (keeps the live timeline and aligns with the running instance's counter); back up the file first.
 - **Desktop icon does not update**: clear the Windows icon cache (delete `IconCache.db` and restart Explorer); shortcuts already point at the standalone `dsh-desktop.ico`.
+- **External link clicks do nothing**: the opener plugin depends on the remote capability (see How It Works). Make sure the installed build includes `capabilities/remote-opener.json` (from `v0.2.x`); reinstall if you are on an older build.
+- **"Open config file" does nothing (Windows)**: DSH opens files through the extension association on Windows; if `.yaml`/`.yml` has no default association, the system silently ignores the request. Set a per-user association, e.g. open with Cursor (matches "Open with → Cursor"):
+
+  ```bat
+  reg add HKCU\Software\Classes\.yaml /ve /d Cursor.yaml /f
+  reg add HKCU\Software\Classes\.yml  /ve /d Cursor.yml /f
+  ```
+
+  You can use any registered progid instead (VS Code is usually `VSCode.yaml`, Notepad is `txtfile`).
 - **Rollback**: `backup-pre-prune/` holds previous installers and the complete pre-prune `rt/`.

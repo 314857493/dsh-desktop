@@ -1,0 +1,9 @@
+{
+  "identifier": "remote-opener",
+  "description": "Allow the loopback DSH web page (http://127.0.0.1) to open external links in the system default browser via the opener plugin. The DSH page is served over http://127.0.0.1:<port>, which Tauri treats as a remote origin; without this remote capability the opener plugin's click interception is denied by the IPC access-control list and link clicks silently do nothing.",
+  "windows": ["main"],
+  "remote": {
+    "urls": ["http://127.0.0.1:*", "http://localhost:*"]
+  },
+  "permissions": ["opener:default"]
+}

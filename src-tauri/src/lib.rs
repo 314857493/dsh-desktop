@@ -90,6 +90,32 @@ fn assign_kill_on_close_job(child: &Child) {
 /// Prefix of the readiness line `dsh web` prints once the server is up.
 const URL_LINE_PREFIX: &str = "dsh web: ";
 
+/// Injected after every finished page load: route `window.open` calls for
+/// external schemes to the opener plugin instead of letting the WebView
+/// silently swallow them. wry registers no new-window handler in this shell,
+/// so WebView2 cancels `window.open` (the default for unhandled
+/// `NewWindowRequested`); DSH's own plugins (market cards, sidebar "跳转")
+/// rely on `window.open`, which would otherwise do nothing.
+const WINDOW_OPEN_SHIM: &str = r#"
+(() => {
+  if (window.__dshOpenShimmed) return;
+  window.__dshOpenShimmed = true;
+  const original = window.open;
+  window.open = function (url, target, features) {
+    try {
+      if (typeof url === 'string' && url.trim() !== '') {
+        const u = new URL(url, window.location.href);
+        if (u.protocol === 'http:' || u.protocol === 'https:' || u.protocol === 'mailto:' || u.protocol === 'tel:') {
+          window.__TAURI_INTERNALS__.invoke('plugin:opener|open_url', { url: u.href }).catch(() => {});
+          return null;
+        }
+      }
+    } catch { /* fall through to the native open below */ }
+    return typeof original === 'function' ? original.apply(this, arguments) : null;
+  };
+})();
+"#;
+
 /// Managed handle to the spawned server process (killed on app exit).
 struct ServerHandle(Mutex<Option<Child>>);
 
@@ -521,6 +547,12 @@ pub fn run() {
             }
         }))
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_opener::init())
+        .on_page_load(|webview, payload| {
+            if matches!(payload.event(), tauri::webview::PageLoadEvent::Finished) {
+                let _ = webview.eval(WINDOW_OPEN_SHIM);
+            }
+        })
         .setup(|app| {
             let handle = app.handle();
             // Diagnostics live next to the exe so they are easy to find.

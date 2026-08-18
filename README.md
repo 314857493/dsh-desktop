@@ -16,6 +16,8 @@ DSH，本仓库提供的是桌面封装、自包含打包与自动化发布（�
   互不干扰，避免双实例写同一会话导致日志损坏
 - 🧹 **进程清理可靠**：退出时 `taskkill /T /F` 杀进程树 + Windows Job Object
   kill-on-close（app 即使被强杀/崩溃，服务器进程树也会被 OS 强制清理，不留孤儿）
+- 🔗 **外链交给系统浏览器**：回答/设置里的外部链接用系统默认浏览器打开（opener 插件 +
+  面向回环地址的 remote capability），配置文件用系统默认编辑器打开
 - 📦 **自包含分发**：内置 Node.js 运行时 + 裁剪过的 DSH 运行环境，对方无需安装任何东西
 - ⚙️ **可配置**：内置资源 / 配置文件 / 环境变量 / 命令行参数四级优先级
 - 🔄 **跟随上游**：发布脚本从 DSH 官方仓库拉取源码构建，可固定 tag/分支，随上游更新
@@ -189,6 +191,14 @@ git push origin v0.2.0
 5. 退出时 `taskkill /T /F` 杀掉服务器进程树；同时子进程挂 Windows Job Object
    kill-on-close——app 无论怎么退出（关窗/崩溃/强杀），服务器都会被清理。
 
+**外链打开**：DSH 前端把外部链接渲染为 `target="_blank"`；opener 插件注入的
+脚本拦截点击并调用 Tauri IPC 让系统默认浏览器打开。由于页面地址是
+`http://127.0.0.1:<port>`（Tauri 视为远程源），必须用
+`capabilities/remote-opener.json` 里的 remote capability 放行
+`plugin:opener|open_url`，否则点击被访问控制列表静默拒绝、毫无反应。
+**打开配置文件**：走 DSH 服务端 `settings.openDocument` → 系统默认应用打开
+（Windows 依赖 `.yaml`/`.yml` 文件关联，见故障排查）。
+
 ## 项目结构
 
 ```
@@ -196,6 +206,7 @@ dsh-desktop/
 ├── src-tauri/            # Tauri 壳（Rust）
 │   ├── src/lib.rs        # 配置解析 / 拉起服务器 / 导航 / 进程清理
 │   ├── tauri.conf.json   # 窗口、资源（rt→dsh、node-runtime→node、icon.ico）
+│   ├── capabilities/     # 权限：default + remote-opener（回环地址放行外链打开）
 │   ├── nsis/hooks.nsh    # 安装时创建桌面快捷方式（指向独立 ico）
 │   └── icons/            # 图标资源（由官方 SVG 生成）
 ├── dist/                 # 启动页（loading 页，服务器就绪前展示）
@@ -208,6 +219,7 @@ dsh-desktop/
 │   ├── boot-test.mjs          # 运行时冒烟测试
 │   ├── gen-app-icon-svg.mjs   # 从官方 SVG 生成图标（含 glyph-path.txt）
 │   ├── repair-session-log.mjs # 会话日志修复（双实例写坏时重建连续 seq）
+│   ├── test-open-document.mjs # 端到端验证「打开配置文件」（TEST_NODE/TEST_BIN 指定运行时）
 │   └── analyze-session-log.mjs # 会话日志结构分析
 ├── launch-dsh-desktop.cmd # 绿色版启动器
 └── README.md
@@ -224,4 +236,16 @@ dsh-desktop/
   时间线、与运行中实例计数器对齐），原文件先备份。
 - **桌面图标不更新**：清 Windows 图标缓存（删除 `IconCache.db` 后重启资源管理器），
   快捷方式已直接引用独立的 `dsh-desktop.ico`。
+- **外链点击没反应**：opener 插件依赖 remote capability（见「工作原理」）。确认安装包
+  版本包含 `capabilities/remote-opener.json`（`v0.2.x` 起）；旧版本请重装。
+- **「打开配置文件」没反应（Windows）**：DSH 在 Windows 上靠扩展名关联打开文件；
+  若 `.yaml`/`.yml` 无默认关联，系统会静默忽略。为当前用户设置关联即可，例如
+  用 Cursor 打开（与「打开方式 → Cursor」一致）：
+
+  ```bat
+  reg add HKCU\Software\Classes\.yaml /ve /d Cursor.yaml /f
+  reg add HKCU\Software\Classes\.yml  /ve /d Cursor.yml /f
+  ```
+
+  也可换成其他已注册的 progid（VS Code 一般为 `VSCode.yaml`，记事本为 `txtfile`）。
 - **回滚**：`backup-pre-prune/` 下有历史安装包与裁剪前的完整 `rt/`。
