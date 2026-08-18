@@ -230,7 +230,9 @@ if (USE_LOCAL) {
   }
 } else {
   step('1/11 pnpm install (frozen lockfile)')
-  run('pnpm install', 'pnpm', ['install', '--frozen-lockfile'], { cwd: REPO })
+  // confirmModulesPurge=false: pnpm aborts a full node_modules purge without
+  // a TTY unless CI=true; the release pipeline is non-interactive by design.
+  run('pnpm install', 'pnpm', ['install', '--frozen-lockfile', '--config.confirmModulesPurge=false'], { cwd: REPO })
   step('2/11 build DSH repo (pnpm run build)')
   run('repo build', 'pnpm', ['run', 'build'], { cwd: REPO })
 }
