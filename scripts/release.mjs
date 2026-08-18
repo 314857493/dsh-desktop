@@ -315,16 +315,31 @@ if (!SKIP_BOOT) {
 
 // ---------- 8. build ----------
 step('10/11 tauri build')
-// A bare Apple Silicon executable only has the linker-generated signature.
-// Without a signing identity Tauri does not sign the completed .app bundle,
-// so Gatekeeper reports browser-downloaded DMGs as damaged.  A configured
-// Developer ID identity still takes precedence; otherwise produce a complete
-// ad-hoc signature that users can explicitly allow in Privacy & Security.
-if (process.platform === 'darwin' && !process.env.APPLE_SIGNING_IDENTITY?.trim()) {
-  process.env.APPLE_SIGNING_IDENTITY = '-'
-  console.log('macOS signing identity: ad hoc (set APPLE_SIGNING_IDENTITY for Developer ID)')
-}
 if (process.platform === 'darwin') {
+  // GitHub Actions exposes missing secrets as present-but-empty environment
+  // variables. Tauri treats an empty APPLE_CERTIFICATE as configured and
+  // attempts to import an empty p12, so remove blank optional values first.
+  for (const name of [
+    'APPLE_SIGNING_IDENTITY',
+    'APPLE_CERTIFICATE',
+    'APPLE_CERTIFICATE_PASSWORD',
+    'APPLE_ID',
+    'APPLE_PASSWORD',
+    'APPLE_TEAM_ID',
+  ]) {
+    if (!process.env[name]?.trim()) delete process.env[name]
+  }
+
+  // A bare Apple Silicon executable only has the linker-generated signature.
+  // Without a signing identity Tauri does not sign the completed .app bundle,
+  // so Gatekeeper reports browser-downloaded DMGs as damaged. A configured
+  // Developer ID identity still takes precedence; otherwise produce a complete
+  // ad-hoc signature that users can explicitly allow in Privacy & Security.
+  if (!process.env.APPLE_SIGNING_IDENTITY) {
+    process.env.APPLE_SIGNING_IDENTITY = '-'
+    console.log('macOS signing identity: ad hoc (set APPLE_SIGNING_IDENTITY for Developer ID)')
+  }
+
   // Some cross-platform terminals export C.UTF-8, which macOS does not ship.
   // create-dmg invokes Perl while preparing the volume icon; Perl aborts on
   // that locale and leaves the read-write image mounted.  The portable C
