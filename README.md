@@ -119,11 +119,16 @@ node scripts/release.mjs --local
 node scripts/release.mjs --repo <本地 DSH 源码路径>
 node scripts/release.mjs --local --rebuild-repo   # 本地源码重新构建后再打包
 
-# 自定义远程地址 / 发布后静默安装（Windows）/ 跳过冒烟测试
+# 自定义远程地址 / 发布后静默安装（Windows）/ 跳过冒烟测试 / 指定产物版本号
 node scripts/release.mjs --remote-url <url>
 node scripts/release.mjs --install
 node scripts/release.mjs --skip-boot-test
+node scripts/release.mjs --version 0.1.4   # 产物版本号（同步 tauri.conf.json + Cargo.toml，v 前缀自动去掉）
 ```
+
+> **产物版本号**：GitHub Actions 打 `v*` tag 发布时自动把 tag 名作为版本号
+> （`v0.1.4` → 安装包 `DSH Desktop_0.1.4_x64-setup.exe`）；本地/手动触发不传则
+> 使用仓库里 tauri.conf.json 的版本。
 
 远程源码缓存在 `repo-cache/deepseek-harness/`（浅克隆，后续运行增量 fetch，不触碰
 本机开发用的 checkout）。

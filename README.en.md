@@ -102,11 +102,17 @@ node scripts/release.mjs --local
 node scripts/release.mjs --repo <local DSH source path>
 node scripts/release.mjs --local --rebuild-repo   # rebuild the local source first
 
-# Custom remote URL / silent install after build (Windows) / skip smoke test
+# Custom remote URL / silent install after build (Windows) / skip smoke test / stamp version
 node scripts/release.mjs --remote-url <url>
 node scripts/release.mjs --install
 node scripts/release.mjs --skip-boot-test
+node scripts/release.mjs --version 0.1.4   # artifact version (syncs tauri.conf.json + Cargo.toml; a leading `v` is stripped)
 ```
+
+> **Artifact version**: when GitHub Actions publishes a `v*` tag, the tag name is
+> used as the artifact version automatically (`v0.1.4` → installer
+> `DSH Desktop_0.1.4_x64-setup.exe`); local runs / manual dispatch without a
+> version use the version checked into `tauri.conf.json`.
 
 Remote source is cached in `repo-cache/deepseek-harness/` (shallow clone; subsequent runs do an incremental fetch and never touch your local dev checkout).
 

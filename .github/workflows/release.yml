@@ -57,7 +57,9 @@ jobs:
         run: npm install -g @tauri-apps/cli
 
       - name: Run release pipeline (fetch DSH source -> build -> package)
-        run: node scripts/release.mjs
+        # On tag pushes stamp the artifact version from the tag (v0.1.4 -> 0.1.4);
+        # manual dispatch has no version, so the checked-in defaults are used.
+        run: node scripts/release.mjs ${{ github.ref_type == 'tag' && format('--version {0}', github.ref_name) || '' }}
         env:
           CI: "true"
           # linuxdeploy on CI: avoid FUSE (extract-and-run), skip strip issues,

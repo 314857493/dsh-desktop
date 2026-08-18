@@ -10,6 +10,7 @@
  *   node scripts/release.mjs --remote-url <url>       # custom remote
  *   node scripts/release.mjs --install                # silently install after build
  *   node scripts/release.mjs --skip-boot-test         # skip the runtime smoke test
+ *   node scripts/release.mjs --version 0.1.4          # stamp the bundle version (tauri.conf.json + Cargo.toml)
  *
  * Pipeline (remote mode): fetch -> pnpm install -> pnpm build -> pnpm deploy
  *           -> patch-runtime -> ensure-fallback -> trim-runtime
@@ -17,7 +18,7 @@
  * Artifact: src-tauri/target/release/bundle/nsis/DSH Desktop_*_x64-setup.exe
  */
 import { spawnSync } from 'node:child_process'
-import { chmodSync, copyFileSync, cpSync, existsSync, lstatSync, mkdirSync, readdirSync, realpathSync, rmSync, statSync } from 'node:fs'
+import { chmodSync, copyFileSync, cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, delimiter, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -54,6 +55,31 @@ const projectArg = value('--project')
 const REMOTE_URL = value('--remote-url') ?? 'https://github.com/deepseek-ai/deepseek-harness.git'
 const REF = value('--ref') ?? 'master'
 const PROJECT = projectArg ?? project
+
+// ---------- bundle version stamping ----------
+// --version overrides the version embedded in the artifacts (the name shown
+// in installers and the app metadata). Tauri reads the version from
+// tauri.conf.json; Cargo.toml is synced to keep the crate consistent.
+// CI passes the tag name (e.g. `--version v0.1.4`); a leading `v` is stripped.
+const VERSION_ARG = (value('--version') ?? '').trim()
+if (VERSION_ARG !== '') {
+  const clean = VERSION_ARG.replace(/^v/, '')
+  if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(clean)) {
+    fail(`--version 需要 semver（如 0.1.4 或 v0.1.4），收到 "${VERSION_ARG}"`)
+  }
+  const confPath = join(PROJECT, 'src-tauri', 'tauri.conf.json')
+  const cargoPath = join(PROJECT, 'src-tauri', 'Cargo.toml')
+  for (const [path, pattern] of [
+    [confPath, /"version"\s*:\s*"[^"]*"/],
+    [cargoPath, /^version\s*=\s*"[^"]*"/m],
+  ]) {
+    const text = readFileSync(path, 'utf8')
+    if (!pattern.test(text)) fail(`未找到 version 字段: ${path}`)
+    writeFileSync(path, text.replace(pattern, (m) =>
+      m.startsWith('"version"') ? `"version": "${clean}"` : `version = "${clean}"`))
+  }
+  console.log(`version synced: ${clean} (src-tauri/tauri.conf.json + src-tauri/Cargo.toml)`)
+}
 
 // ---------- remote source (default) vs local checkout ----------
 const cacheDir = join(PROJECT, 'repo-cache', 'deepseek-harness')
