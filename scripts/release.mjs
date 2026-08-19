@@ -10,6 +10,7 @@
  *   node scripts/release.mjs --remote-url <url>       # custom remote
  *   node scripts/release.mjs --install                # silently install after build
  *   node scripts/release.mjs --skip-boot-test         # skip the runtime smoke test
+ *   node scripts/release.mjs --no-updater              # test package; do not require/sign updater artifacts
  *   node scripts/release.mjs --version 0.1.4          # stamp the bundle version (tauri.conf.json + Cargo.toml)
  *
  * Pipeline (remote mode): fetch -> pnpm install -> pnpm build -> pnpm deploy
@@ -49,12 +50,37 @@ const value = (name) => {
 const REBUILD = flag('--rebuild-repo')
 const INSTALL = flag('--install')
 const SKIP_BOOT = flag('--skip-boot-test')
+const NO_UPDATER = flag('--no-updater')
 const USE_LOCAL = flag('--local') || args.includes('--repo')
 const repoArg = value('--repo')
 const projectArg = value('--project')
 const REMOTE_URL = value('--remote-url') ?? 'https://github.com/deepseek-ai/deepseek-harness.git'
 const REF = value('--ref') ?? 'master'
 const PROJECT = projectArg ?? project
+
+// Formal builds must sign updater artifacts. Development machines can still
+// exercise the complete runtime + installer pipeline with --no-updater; that
+// mode merges a small config override and emits ordinary installers only.
+if (!NO_UPDATER) {
+  const signingKey = process.env.TAURI_SIGNING_PRIVATE_KEY?.trim()
+  if (!signingKey) {
+    fail(
+      '缺少 TAURI_SIGNING_PRIVATE_KEY：正式打包需要 updater 私钥。' +
+      '开发机仅测试安装包时请添加 --no-updater。',
+    )
+  }
+
+  // GitHub Actions provides the key contents through its encrypted secret,
+  // while local developers commonly provide a key-file path. `tauri build`
+  // accepts either form, but `tauri signer sign` accepts contents only, so
+  // normalize a path once before invoking either command.
+  if (!signingKey.includes('\n') && existsSync(signingKey) && statSync(signingKey).isFile()) {
+    const contents = readFileSync(signingKey, 'utf8').trim()
+    if (!contents) fail(`updater 私钥文件为空: ${signingKey}`)
+    process.env.TAURI_SIGNING_PRIVATE_KEY = contents
+    console.log(`updater signing key: loaded from ${signingKey}`)
+  }
+}
 
 // ---------- bundle version stamping ----------
 // --version overrides the version embedded in the artifacts (the name shown
@@ -108,11 +134,11 @@ function fetchRemote() {
   }
 
   if (!existsSync(cacheDir)) {
-    step('0/11 fetch remote DSH source (clone)')
+    step('0/12 fetch remote DSH source (clone)')
     console.log(`$ git clone --depth 1 ${REMOTE_URL} ${cacheDir}`)
     git(null, ['clone', '--depth', '1', REMOTE_URL, cacheDir])
   } else {
-    step('0/11 fetch remote DSH source (update)')
+    step('0/12 fetch remote DSH source (update)')
   }
   // Bring in the exact commit and move the worktree to it (no FETCH_HEAD).
   git(cacheDir, ['fetch', '--depth', '1', 'origin', sha])
@@ -240,6 +266,22 @@ function runNode(label, script, scriptArgs = []) {
   if (r.status !== 0) fail(`${label} failed (exit ${r.status})`)
 }
 
+/** Run the Tauri CLI, using the globally installed binary or an npx fallback. */
+function runTauri(label, tauriArgs) {
+  const direct = spawnSync('tauri', tauriArgs, { stdio: 'inherit', shell: true, cwd: PROJECT })
+  console.log(`[tauri] status=${direct.status} signal=${direct.signal}`)
+  if (direct.status === 0) return
+
+  console.log('tauri CLI not on PATH or failed — falling back to npx @tauri-apps/cli')
+  const fallback = spawnSync(
+    'npx',
+    ['--yes', '@tauri-apps/cli', ...tauriArgs],
+    { stdio: 'inherit', shell: true, cwd: PROJECT },
+  )
+  console.log(`[npx] status=${fallback.status} signal=${fallback.signal}`)
+  if (fallback.status !== 0) fail(`${label} failed (exit ${fallback.status})`)
+}
+
 if (!existsSync(join(REPO, 'package.json'))) fail(`DSH repo not found: ${REPO}`)
 if (!existsSync(join(PROJECT, 'src-tauri', 'tauri.conf.json'))) fail(`project not found: ${PROJECT}`)
 
@@ -249,22 +291,22 @@ if (!existsSync(join(PROJECT, 'src-tauri', 'tauri.conf.json'))) fail(`project no
 // built; pass --rebuild-repo to force.
 if (USE_LOCAL) {
   if (REBUILD) {
-    step('0/11 rebuild DSH repo (pnpm run build)')
+    step('0/12 rebuild DSH repo (pnpm run build)')
     run('repo build', 'pnpm', ['run', 'build'], { cwd: REPO })
   } else {
     console.log(`skip repo rebuild (using current build artifacts in ${REPO}); add --rebuild-repo for a fully fresh release`)
   }
 } else {
-  step('1/11 pnpm install (frozen lockfile)')
+  step('1/12 pnpm install (frozen lockfile)')
   // confirmModulesPurge=false: pnpm aborts a full node_modules purge without
   // a TTY unless CI=true; the release pipeline is non-interactive by design.
   run('pnpm install', 'pnpm', ['install', '--frozen-lockfile', '--config.confirmModulesPurge=false'], { cwd: REPO })
-  step('2/11 build DSH repo (pnpm run build)')
+  step('2/12 build DSH repo (pnpm run build)')
   run('repo build', 'pnpm', ['run', 'build'], { cwd: REPO })
 }
 
 // ---------- 1. pnpm deploy -> rt ----------
-step('3/11 pnpm deploy -> rt')
+step('3/12 pnpm deploy -> rt')
 if (existsSync(rtDir)) {
   console.log('cleaning old rt...')
   rmSync(rtDir, { recursive: true, force: true })
@@ -272,20 +314,20 @@ if (existsSync(rtDir)) {
 run('pnpm deploy', 'pnpm', ['--filter', '@deepseek-ai/dsh', 'deploy', '--legacy', '--config.node-linker=hoisted', rtDir], { cwd: REPO })
 
 // ---------- 2. patch runtime deps ----------
-step('4/11 patch-runtime (restore runtime-needed devDeps)')
+step('4/12 patch-runtime (restore runtime-needed devDeps)')
 runNode('patch-runtime', join(here, 'patch-runtime.mjs'), [rtDir, REPO])
 
 // ---------- 3. ensure-fallback ----------
-step('5/11 install ensure-fallback script')
+step('5/12 install ensure-fallback script')
 mkdirSync(join(rtDir, 'scripts'), { recursive: true })
 copyFileSync(join(here, 'ensure-fallback.mjs'), join(rtDir, 'scripts', 'ensure-fallback.mjs'))
 
 // ---------- 4. trim maps/types/sources ----------
-step('6/11 trim-runtime (strip maps/d.ts/sources)')
+step('6/12 trim-runtime (strip maps/d.ts/sources)')
 runNode('trim-runtime', join(here, 'trim-runtime.mjs'), [rtDir])
 
 // ---------- 5. prune orphan deps (back up the previous installer first) ----------
-step('7/11 prune-rt (remove runtime-unneeded orphan deps)')
+step('7/12 prune-rt (remove runtime-unneeded orphan deps)')
 if (IS_WIN) {
   const nsisDir = join(PROJECT, 'src-tauri', 'target', 'release', 'bundle', 'nsis')
   const installers = existsSync(nsisDir) ? readdirSync(nsisDir).filter((f) => f.endsWith('-setup.exe')).map((f) => join(nsisDir, f)) : []
@@ -299,12 +341,12 @@ if (IS_WIN) {
 runNode('prune-rt', join(here, 'prune-rt.mjs'), [rtDir, backup])
 
 // ---------- 6. ensure node-runtime (copy core Node from system) ----------
-step('8/11 ensure node-runtime (copy core Node from system)')
+step('8/12 ensure node-runtime (copy core Node from system)')
 ensureNodeRuntime()
 
 // ---------- 7. runtime smoke test ----------
 if (!SKIP_BOOT) {
-  step('9/11 boot-test (runtime smoke test)')
+  step('9/12 boot-test (runtime smoke test)')
   const nodeExe = join(nodeRuntime, NODE_BIN)
   const testHome = join(PROJECT, `.dsh-boot-test-${stamp}`)
   runNode('boot-test', join(here, 'boot-test.mjs'), [nodeExe, rtDir, testHome])
@@ -314,7 +356,7 @@ if (!SKIP_BOOT) {
 }
 
 // ---------- 8. build ----------
-step('10/11 tauri build')
+step('10/12 tauri build')
 if (process.platform === 'darwin') {
   // GitHub Actions exposes missing secrets as present-but-empty environment
   // variables. Tauri treats an empty APPLE_CERTIFICATE as configured and
@@ -359,14 +401,29 @@ const BUNDLES = IS_WIN
     : ['deb', 'appimage']
 console.log(`bundle targets: ${BUNDLES.join(', ')}`)
 const buildArgs = ['build', '--bundles', ...BUNDLES]
+if (NO_UPDATER) {
+  buildArgs.push('--config', 'src-tauri/tauri.no-updater.conf.json')
+  console.log('updater artifacts: disabled (--no-updater)')
+}
 if (process.env.TAURI_VERBOSE === '1') buildArgs.push('-v')
-const tauriOk = spawnSync('tauri', buildArgs, { stdio: 'inherit', shell: true, cwd: PROJECT })
-console.log(`[tauri] status=${tauriOk.status} signal=${tauriOk.signal}`)
-if (tauriOk.status !== 0) {
-  console.log('tauri CLI not on PATH or failed — falling back to npx @tauri-apps/cli')
-  const npx = spawnSync('npx', ['--yes', '@tauri-apps/cli', ...buildArgs], { stdio: 'inherit', shell: true, cwd: PROJECT })
-  console.log(`[npx] status=${npx.status} signal=${npx.signal}`)
-  if (npx.status !== 0) fail(`tauri build failed (exit ${npx.status})`)
+runTauri('tauri build', buildArgs)
+
+// Tauri emits a signed AppImage updater automatically. The updater plugin can
+// also install Debian packages, but the bundler does not currently emit their
+// minisign signatures, so sign each .deb explicitly for the installer-specific
+// `linux-<arch>-deb` manifest target.
+if (process.platform === 'linux' && !NO_UPDATER) {
+  step('11/12 sign Debian updater artifact')
+  const debDir = join(PROJECT, 'src-tauri', 'target', 'release', 'bundle', 'deb')
+  const debs = existsSync(debDir)
+    ? readdirSync(debDir).filter((file) => file.endsWith('.deb')).map((file) => join(debDir, file))
+    : []
+  if (debs.length === 0) fail('Debian bundle not found for updater signing')
+  for (const deb of debs) {
+    rmSync(`${deb}.sig`, { force: true })
+    runTauri(`sign ${basename(deb)}`, ['signer', 'sign', deb])
+    if (!existsSync(`${deb}.sig`)) fail(`Debian updater signature not generated: ${deb}.sig`)
+  }
 }
 
 // ---------- report ----------

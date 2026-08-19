@@ -25,6 +25,7 @@
   },
   "bundle": {
     "active": true,
+    "createUpdaterArtifacts": true,
     "targets": "all",
     "resources": {
       "../rt": "dsh",
@@ -46,6 +47,17 @@
       "nsis": {
         "installMode": "currentUser",
         "installerHooks": "./nsis/hooks.nsh"
+      }
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaW5pIHB1YmxpYyBrZXk6IEU5NUJDRTkwNkJBQjBCNDYKUldSR0M2dHJrTTViNlUvZkJZMWFqR0M2V1NKR2tSMUZVbWlzcW9GTlROOE4ydEp4cXhPY2hDdU8K",
+      "endpoints": [
+        "https://github.com/314857493/dsh-desktop/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
       }
     }
   }

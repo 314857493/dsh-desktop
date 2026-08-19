@@ -26,7 +26,8 @@ use std::{
 
 use serde::Deserialize;
 use tauri::{AppHandle, Manager, RunEvent, WebviewWindow};
-use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
+use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
+use tauri_plugin_updater::UpdaterExt;
 
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
@@ -58,7 +59,8 @@ fn assign_kill_on_close_job(child: &Child) {
     use windows_sys::Win32::Foundation::CloseHandle;
     use windows_sys::Win32::System::JobObjects::{
         AssignProcessToJobObject, CreateJobObjectW, JobObjectExtendedLimitInformation,
-        SetInformationJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+        SetInformationJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+        JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
     };
     unsafe {
         let job = CreateJobObjectW(std::ptr::null(), std::ptr::null());
@@ -77,7 +79,8 @@ fn assign_kill_on_close_job(child: &Child) {
             CloseHandle(job);
             return;
         }
-        let assigned = AssignProcessToJobObject(job, child.as_raw_handle() as *mut core::ffi::c_void);
+        let assigned =
+            AssignProcessToJobObject(job, child.as_raw_handle() as *mut core::ffi::c_void);
         if assigned == 0 {
             CloseHandle(job);
             return; // e.g. the child is already in a job that blocks nesting
@@ -89,6 +92,9 @@ fn assign_kill_on_close_job(child: &Child) {
 
 /// Prefix of the readiness line `dsh web` prints once the server is up.
 const URL_LINE_PREFIX: &str = "dsh web: ";
+
+/// Normal title restored after temporary updater progress is shown.
+const APP_WINDOW_TITLE: &str = "DeepSeek Harness";
 
 /// Injected after every finished page load: route `window.open` calls for
 /// external schemes to the opener plugin instead of letting the WebView
@@ -507,16 +513,130 @@ fn shutdown_server(app: &AppHandle) {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Application updates
+// ---------------------------------------------------------------------------
+
+/// Keep release notes useful in a native message box without letting a very
+/// long GitHub release body create an unusable dialog.
+fn concise_release_notes(notes: Option<&str>) -> String {
+    const MAX_CHARS: usize = 1_200;
+    let notes = notes.map(str::trim).filter(|notes| !notes.is_empty());
+    let Some(notes) = notes else {
+        return "本次更新未提供更新说明。".into();
+    };
+
+    let mut chars = notes.chars();
+    let shortened: String = chars.by_ref().take(MAX_CHARS).collect();
+    if chars.next().is_some() {
+        format!("{shortened}\n……")
+    } else {
+        shortened
+    }
+}
+
+/// Check once per launch. Check failures stay in the diagnostic log so a
+/// temporary network or GitHub outage never interrupts normal startup. Once
+/// the user accepts an offered update, download/install failures are surfaced.
+fn check_for_updates(app: AppHandle, window: WebviewWindow) {
+    tauri::async_runtime::spawn(async move {
+        log("[updater] checking for updates");
+        let updater = match app.updater() {
+            Ok(updater) => updater,
+            Err(error) => {
+                log(&format!("[updater] initialization failed: {error}"));
+                return;
+            }
+        };
+        let update = match updater.check().await {
+            Ok(Some(update)) => update,
+            Ok(None) => {
+                log("[updater] already on the latest version");
+                return;
+            }
+            Err(error) => {
+                log(&format!("[updater] check failed: {error}"));
+                return;
+            }
+        };
+
+        log(&format!(
+            "[updater] update available: {} -> {}",
+            update.current_version, update.version
+        ));
+        let message = format!(
+            "当前版本：{}\n新版本：{}\n\n{}\n\n现在下载并安装吗？安装完成后应用会重新启动。",
+            update.current_version,
+            update.version,
+            concise_release_notes(update.body.as_deref())
+        );
+        let accepted = app
+            .dialog()
+            .message(message)
+            .title("发现新版本")
+            .kind(MessageDialogKind::Info)
+            .buttons(MessageDialogButtons::OkCancelCustom(
+                "下载并安装".into(),
+                "稍后".into(),
+            ))
+            .blocking_show();
+        if !accepted {
+            log("[updater] update postponed by user");
+            return;
+        }
+
+        log("[updater] downloading update");
+        let _ = window.set_title("DSH Desktop — 正在下载更新…");
+        let progress_window = window.clone();
+        let finished_window = window.clone();
+        let mut downloaded = 0_u64;
+        let mut last_reported_percent = 0_u64;
+        let result = update
+            .download_and_install(
+                move |chunk_length, content_length| {
+                    downloaded = downloaded.saturating_add(chunk_length as u64);
+                    let Some(total) = content_length.filter(|total| *total > 0) else {
+                        return;
+                    };
+                    let percent = downloaded.saturating_mul(100) / total;
+                    if percent >= last_reported_percent.saturating_add(5) || percent >= 100 {
+                        last_reported_percent = percent;
+                        let _ = progress_window
+                            .set_title(&format!("DSH Desktop — 正在下载更新 {percent}%"));
+                    }
+                },
+                move || {
+                    log("[updater] download complete; installing");
+                    let _ = finished_window.set_title("DSH Desktop — 正在安装更新…");
+                },
+            )
+            .await;
+
+        if let Err(error) = result {
+            log(&format!("[updater] install failed: {error}"));
+            let _ = window.set_title(APP_WINDOW_TITLE);
+            app.dialog()
+                .message(format!(
+                    "更新未能安装：{error}\n\n应用可以继续使用，稍后重新启动会再次检查。"
+                ))
+                .title("更新失败")
+                .kind(MessageDialogKind::Error)
+                .show(|_| {});
+            return;
+        }
+
+        log("[updater] update installed; restarting");
+        app.restart();
+    });
+}
+
 /// Show a native error dialog and keep the splash window with an error state.
 fn fail(app: &AppHandle, window: &WebviewWindow, title: &str, message: &str) {
     log(&format!("[fatal] {title}: {message}"));
     let _ = window.navigate(
-        format!(
-            "tauri://localhost/index.html?error={}",
-            urlencode(message)
-        )
-        .parse()
-        .unwrap_or_else(|_| "tauri://localhost/index.html".parse().expect("static url")),
+        format!("tauri://localhost/index.html?error={}", urlencode(message))
+            .parse()
+            .unwrap_or_else(|_| "tauri://localhost/index.html".parse().expect("static url")),
     );
     app.dialog()
         .message(message)
@@ -552,6 +672,7 @@ pub fn run() {
         }))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .on_page_load(|webview, payload| {
             if matches!(payload.event(), tauri::webview::PageLoadEvent::Finished) {
                 let _ = webview.eval(WINDOW_OPEN_SHIM);
@@ -571,6 +692,10 @@ pub fn run() {
             let window = app
                 .get_webview_window("main")
                 .expect("main window missing from config");
+
+            // Keep recovery independent from the bundled DSH/Node runtime.
+            // A broken runtime is exactly when an in-app update is most useful.
+            check_for_updates(handle.clone(), window.clone());
 
             let root = match resolve_dsh_root(handle, config.dsh_root) {
                 Ok(root) => root,

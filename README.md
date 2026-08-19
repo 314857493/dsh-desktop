@@ -123,8 +123,13 @@ node scripts/release.mjs --local --rebuild-repo   # 本地源码重新构建后�
 node scripts/release.mjs --remote-url <url>
 node scripts/release.mjs --install
 node scripts/release.mjs --skip-boot-test
+node scripts/release.mjs --no-updater       # 开发机测试安装包；不需要 updater 私钥
 node scripts/release.mjs --version 0.1.4   # 产物版本号（同步 tauri.conf.json + Cargo.toml，v 前缀自动去掉）
 ```
+
+> **开发机测试打包**：`--no-updater` 仍会执行运行时准备、冒烟测试和平台安装包构建，
+> 但通过 `src-tauri/tauri.no-updater.conf.json` 临时关闭 updater 产物，不生成 `.sig`，
+> 因此 Windows、macOS 和 Ubuntu 开发机都不需要持有 updater 私钥。正式发布不要使用该参数。
 
 > **产物版本号**：GitHub Actions 打 `v*` tag 发布时自动把 tag 名作为版本号
 > （`v0.1.4` → 安装包 `DSH Desktop_0.1.4_x64-setup.exe`）；本地/手动触发不传则
@@ -144,7 +149,7 @@ node scripts/release.mjs --version 0.1.4   # 产物版本号（同步 tauri.conf
 | **默认（远程）** | `git fetch` → `pnpm install` → `pnpm run build` → deploy… | 无本地 clone / 要最新代码 / CI |
 | **`--local`（本地）** | 校验 `apps/cli/lib/bin.js` 等构建产物：**已构建 → 跳过 install+build 直接打包**；未构建 → 需 `--rebuild-repo` 先构建 | 本地已有 clone 且构建过，秒级出包 |
 
-### 流水线（远程模式 11 步）
+### 流水线（远程模式 12 步）
 
 0. `git fetch` 远程源码（默认 `master`，可 `--ref` 指定 tag/分支/commit）
 1. `pnpm install`（frozen lockfile）
@@ -158,6 +163,7 @@ node scripts/release.mjs --version 0.1.4   # 产物版本号（同步 tauri.conf
 8. `ensure node-runtime` 从系统 Node 复制核心文件（node.exe + npm/corepack）
 9. `boot-test` 运行时冒烟测试（起服务器、等就绪行）
 10. `tauri build` 产出安装包
+11. Linux 构建额外签署 `.deb` updater 产物
 
 > 每次发布都会**重新自动扫描**依赖：DSH 源码更新后，新依赖自动保留、
 > 新垃圾自动裁剪，无需手动维护清单。
@@ -168,7 +174,30 @@ node scripts/release.mjs --version 0.1.4   # 产物版本号（同步 tauri.conf
 
 - **CI**（`.github/workflows/ci.yml`）：push/PR 时校验脚本语法、空白、无机器路径。
 - **Release**（`.github/workflows/release.yml`）：打 `v*` tag 或手动触发 → Windows、
-  macOS、Linux 构建 → 上传安装包并创建 GitHub Release。
+  macOS、Linux 构建 → 上传安装包、签名更新包和 `latest.json` → 创建 GitHub Release。
+
+### 应用内更新
+
+已安装的应用每次启动会在后台检查 GitHub Releases。发现更高版本后会显示原生确认框；
+用户确认后下载经过 minisign 验证的更新包、安装并重启。临时断网或检查失败只会写入
+应用日志，不影响正常启动。
+
+Linux 同时支持 AppImage 和 `.deb` 应用内更新；`.deb` 更新安装时可能由系统请求管理员授权。
+
+首次启用发布流水线前，需要把 updater 私钥配置为仓库 Secret：
+
+```bash
+gh auth login -h github.com
+gh secret set TAURI_SIGNING_PRIVATE_KEY < ~/.tauri/dsh-desktop-updater.key
+```
+
+公钥已经写入 `src-tauri/tauri.conf.json`，可以提交；私钥必须保存在仓库之外，不能提交。
+请安全备份该私钥：丢失后，已经发布的客户端将无法验证用新密钥签署的更新。
+
+更新源默认为
+`https://github.com/314857493/dsh-desktop/releases/latest/download/latest.json`，
+因此 GitHub Release 需要允许客户端匿名下载；若仓库保持私有，应改用可公开读取的
+HTTPS 静态存储或更新服务，不能把 GitHub Token 内置到客户端。
 
 macOS 构建至少使用 ad-hoc 身份签署完整 `.app`，避免 Apple Silicon 将从浏览器
 下载的产物误报为“已损坏”。对外正式发布时，请在仓库 Secrets 中同时配置

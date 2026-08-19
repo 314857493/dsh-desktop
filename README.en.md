@@ -106,8 +106,15 @@ node scripts/release.mjs --local --rebuild-repo   # rebuild the local source fir
 node scripts/release.mjs --remote-url <url>
 node scripts/release.mjs --install
 node scripts/release.mjs --skip-boot-test
+node scripts/release.mjs --no-updater       # test installer on a dev machine; no updater key required
 node scripts/release.mjs --version 0.1.4   # artifact version (syncs tauri.conf.json + Cargo.toml; a leading `v` is stripped)
 ```
+
+> **Development packaging**: `--no-updater` still prepares the runtime, runs the
+> smoke test, and builds the platform installer, but temporarily disables updater
+> artifacts through `src-tauri/tauri.no-updater.conf.json`. It produces no `.sig`,
+> so Windows, macOS, and Ubuntu development machines do not need the updater private
+> key. Do not use this option for a formal release.
 
 > **Artifact version**: when GitHub Actions publishes a `v*` tag, the tag name is
 > used as the artifact version automatically (`v0.1.4` → installer
@@ -125,7 +132,7 @@ Remote source is cached in `repo-cache/deepseek-harness/` (shallow clone; subseq
 | **Default (remote)** | `git fetch` → `pnpm install` → `pnpm run build` → deploy… | no local clone / want latest / CI |
 | **`--local`** | checks for built artifacts (`apps/cli/lib/bin.js` etc.): **already built → skips install+build and packages directly**; if not built, needs `--rebuild-repo` | local clone already built — near-instant packaging |
 
-### Pipeline (remote mode, 11 steps)
+### Pipeline (remote mode, 12 steps)
 
 0. `git fetch` remote source (default `master`; `--ref` pins a tag/branch/commit)
 1. `pnpm install` (frozen lockfile)
@@ -139,13 +146,36 @@ Remote source is cached in `repo-cache/deepseek-harness/` (shallow clone; subseq
 8. `ensure node-runtime` copies core Node files from the system install (node.exe + npm/corepack)
 9. `boot-test` runtime smoke test (boots the server, waits for the ready line)
 10. `tauri build` produces the installer
+11. Linux builds additionally sign the `.deb` updater artifact
 
 > Every release **re-scans dependencies automatically**: when DSH updates, new deps are kept and new garbage is pruned — no manual maintenance.
 
-### GitHub Actions and macOS signing
+### GitHub Actions, in-app updates, and macOS signing
 
-The release workflow builds and publishes Windows, macOS, and Linux bundles. macOS
-builds use a full ad-hoc app signature by default so Apple Silicon does not report
+The release workflow builds and publishes Windows, macOS, and Linux bundles, signed
+updater artifacts, and a static `latest.json` manifest. The installed app checks
+GitHub Releases in the background on each launch. When a newer version is available
+it shows a native confirmation dialog, verifies the download with minisign, installs
+it, and restarts. Network/check failures are logged without interrupting startup.
+Linux in-app updates support both AppImage and `.deb` installations. Installing a
+`.deb` update may trigger the system's administrator authorization prompt.
+
+Before using the release workflow for the first time, add the updater private key as
+a repository secret:
+
+```bash
+gh auth login -h github.com
+gh secret set TAURI_SIGNING_PRIVATE_KEY < ~/.tauri/dsh-desktop-updater.key
+```
+
+The public key in `src-tauri/tauri.conf.json` is safe to commit. Keep and back up the
+private key outside the repository; losing it prevents already-released clients from
+trusting future updates. The default endpoint is
+`https://github.com/314857493/dsh-desktop/releases/latest/download/latest.json`, so
+release assets must be anonymously downloadable. For a private repository, use a
+publicly readable HTTPS bucket or update service instead of embedding a GitHub token.
+
+macOS builds use a full ad-hoc app signature by default so Apple Silicon does not report
 browser-downloaded bundles as damaged. For public distribution, configure all of
 the following repository secrets: `APPLE_SIGNING_IDENTITY`, `APPLE_CERTIFICATE`,
 `APPLE_CERTIFICATE_PASSWORD`, `APPLE_ID`, `APPLE_PASSWORD`, and `APPLE_TEAM_ID`.
@@ -194,7 +224,7 @@ dsh-desktop/
 │   └── icons/            # icon assets (generated from the official SVG)
 ├── dist/                 # splash page (loading page shown before the server is ready)
 ├── scripts/
-│   ├── release.mjs            # one-command release (remote/local, 11 steps)
+│   ├── release.mjs            # one-command release (remote/local, 12 steps)
 │   ├── patch-runtime.mjs      # restores runtime-needed deps pruned by deploy
 │   ├── trim-runtime.mjs       # strips maps/types/sources
 │   ├── prune-rt.mjs           # auto orphan-dep pruning (closure + reference scan)
