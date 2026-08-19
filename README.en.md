@@ -1,6 +1,6 @@
 # DSH Desktop
 
-> **English** | [简体中文](README.md)
+> **English** | [简体中文](README.md) | [Changelog](CHANGELOG.md)
 
 A desktop extension of [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (DSH): a Tauri native window shell that hosts the DSH Web GUI. It launches the `dsh web` Node server, loads the UI into a WebView2 window once the server is ready, and shuts the server down when the window closes.
 
