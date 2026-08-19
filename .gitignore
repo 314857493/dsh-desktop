@@ -4,6 +4,7 @@ src-tauri/gen/
 
 # Node
 node_modules/
+.pnpm-store/
 
 # Local test data (incl. stamped homes like .dsh-boot-test-20260814-123456)
 .dsh-*/

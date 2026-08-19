@@ -154,9 +154,12 @@ Remote source is cached in `repo-cache/deepseek-harness/` (shallow clone; subseq
 
 The release workflow builds and publishes Windows, macOS, and Linux bundles, signed
 updater artifacts, and a static `latest.json` manifest. The installed app checks
-GitHub Releases in the background on each launch. When a newer version is available
-it shows a native confirmation dialog, verifies the download with minisign, installs
-it, and restarts. Network/check failures are logged without interrupting startup.
+GitHub Releases in the background on each launch. The **Check for updates** button
+in the Settings dialog can also trigger a manual check at any time. Results use a
+non-blocking in-app status card and distinguish current, unpublished, offline, service-error,
+unsupported-device, and update-available states without system message boxes. When a newer
+version is available, Settings offers **Update now**; the app verifies the download with
+minisign, installs it, and restarts. Background network/check failures are logged without interrupting startup.
 Linux in-app updates support both AppImage and `.deb` installations. Installing a
 `.deb` update may trigger the system's administrator authorization prompt.
 

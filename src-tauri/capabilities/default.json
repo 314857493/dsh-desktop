@@ -2,5 +2,12 @@
   "identifier": "default",
   "description": "Default capability for the main window",
   "windows": ["main"],
-  "permissions": ["core:default", "dialog:default", "opener:default"]
+  "permissions": [
+    "core:default",
+    "dialog:default",
+    "opener:default",
+    "allow-check-for-updates-manual",
+    "allow-get-cached-update-status",
+    "allow-install-available-update"
+  ]
 }

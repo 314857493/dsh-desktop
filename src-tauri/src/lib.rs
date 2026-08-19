@@ -21,12 +21,12 @@ use std::{
     process::{Child, Command, Stdio},
     sync::{Mutex, OnceLock},
     thread,
-    time::SystemTime,
+    time::{Duration, SystemTime},
 };
 
-use serde::Deserialize;
-use tauri::{AppHandle, Manager, RunEvent, WebviewWindow};
-use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
+use serde::{Deserialize, Serialize};
+use tauri::{AppHandle, Manager, RunEvent, State, WebviewWindow};
+use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
 use tauri_plugin_updater::UpdaterExt;
 
 #[cfg(windows)]
@@ -96,34 +96,333 @@ const URL_LINE_PREFIX: &str = "dsh web: ";
 /// Normal title restored after temporary updater progress is shown.
 const APP_WINDOW_TITLE: &str = "DeepSeek Harness";
 
-/// Injected after every finished page load: route `window.open` calls for
-/// external schemes to the opener plugin instead of letting the WebView
-/// silently swallow them. wry registers no new-window handler in this shell,
-/// so WebView2 cancels `window.open` (the default for unhandled
-/// `NewWindowRequested`); DSH's own plugins (market cards, sidebar "跳转")
-/// rely on `window.open`, which would otherwise do nothing.
-const WINDOW_OPEN_SHIM: &str = r#"
+/// Injected after every finished page load. It routes external `window.open`
+/// calls through the opener plugin and mounts the desktop shell's manual
+/// updater button inside the Settings dialog's existing header-action seat.
+/// The button therefore never floats over the primary conversation surface.
+const PAGE_SHIM: &str = r#"
 (() => {
-  if (window.__dshOpenShimmed) return;
-  window.__dshOpenShimmed = true;
-  const original = window.open;
-  window.open = function (url, target, features) {
-    try {
-      if (typeof url === 'string' && url.trim() !== '') {
-        const u = new URL(url, window.location.href);
-        if (u.protocol === 'http:' || u.protocol === 'https:' || u.protocol === 'mailto:' || u.protocol === 'tel:') {
-          window.__TAURI_INTERNALS__.invoke('plugin:opener|open_url', { url: u.href }).catch(() => {});
-          return null;
+  const invoke = window.__TAURI_INTERNALS__?.invoke;
+
+  if (!window.__dshOpenShimmed) {
+    window.__dshOpenShimmed = true;
+    const original = window.open;
+    window.open = function (url, target, features) {
+      try {
+        if (typeof url === 'string' && url.trim() !== '') {
+          const u = new URL(url, window.location.href);
+          if (u.protocol === 'http:' || u.protocol === 'https:' || u.protocol === 'mailto:' || u.protocol === 'tel:') {
+            invoke?.('plugin:opener|open_url', { url: u.href }).catch(() => {});
+            return null;
+          }
         }
+      } catch { /* fall through to the native open below */ }
+      return typeof original === 'function' ? original.apply(this, arguments) : null;
+    };
+  }
+
+  const findSettingsContext = () => {
+    const dialogs = document.querySelectorAll('[role="dialog"][aria-modal="true"]');
+    for (const dialog of dialogs) {
+      const titleId = dialog.getAttribute('aria-labelledby');
+      const title = titleId ? document.getElementById(titleId)?.textContent?.trim() : '';
+      if (title !== '设置' && title !== 'Settings') continue;
+      const close = [...dialog.querySelectorAll('button')].find((candidate) => {
+        const text = candidate.textContent?.trim();
+        return text === '关闭' || text === 'Close';
+      });
+      if (close?.previousElementSibling instanceof HTMLElement && close.parentElement instanceof HTMLElement) {
+        return { dialog, actions: close.previousElementSibling, header: close.parentElement, english: title === 'Settings' };
       }
-    } catch { /* fall through to the native open below */ }
-    return typeof original === 'function' ? original.apply(this, arguments) : null;
+    }
+    return null;
   };
+
+  let feedbackTimer;
+  const removeUpdateFeedback = () => {
+    window.clearTimeout(feedbackTimer);
+    document.getElementById('dsh-desktop-update-feedback')?.remove();
+  };
+
+  const renderUpdateFeedback = (context, result) => {
+    removeUpdateFeedback();
+    const status = result?.status || 'serviceError';
+    const englishCopy = {
+      latest: { title: 'You’re up to date', message: 'You’re running the latest available version.' },
+      unpublished: { title: 'No updates available', message: 'The update channel does not have an installable release yet.' },
+      offline: { title: 'Can’t reach the update service', message: 'Check your network connection, then try again.' },
+      incompatible: { title: 'No compatible update yet', message: 'An update exists, but there is no installer for this system and architecture yet.' },
+      available: { title: 'A new version is available', message: `Version ${result?.availableVersion || ''} is ready to download, verify, and install.` },
+      serviceError: { title: 'Update service unavailable', message: 'The update service can’t respond right now. The app is still available; please try again later.' },
+      installError: { title: 'Update didn’t finish', message: 'The update could not be downloaded or installed. Run Check for updates before trying again.' },
+    }[status];
+    const displayTitle = context.english ? englishCopy?.title : result?.title;
+    const displayMessage = context.english ? englishCopy?.message : result?.message;
+    const palette = {
+      latest: { icon: '✓', color: '#16853f', background: 'rgba(22, 133, 63, 0.08)' },
+      unpublished: { icon: 'i', color: '#52606d', background: 'rgba(82, 96, 109, 0.08)' },
+      offline: { icon: '↓', color: '#a15c00', background: 'rgba(161, 92, 0, 0.09)' },
+      incompatible: { icon: 'i', color: '#a15c00', background: 'rgba(161, 92, 0, 0.09)' },
+      available: { icon: '↑', color: '#1769d2', background: 'rgba(23, 105, 210, 0.09)' },
+      serviceError: { icon: '!', color: '#c03737', background: 'rgba(192, 55, 55, 0.08)' },
+      installError: { icon: '!', color: '#c03737', background: 'rgba(192, 55, 55, 0.08)' },
+    }[status] || { icon: '!', color: '#c03737', background: 'rgba(192, 55, 55, 0.08)' };
+
+    const feedback = document.createElement('div');
+    feedback.id = 'dsh-desktop-update-feedback';
+    const isError = status === 'serviceError' || status === 'installError';
+    feedback.setAttribute('role', isError ? 'alert' : 'status');
+    feedback.setAttribute('aria-live', isError ? 'assertive' : 'polite');
+    Object.assign(feedback.style, {
+      position: 'relative',
+      flex: 'none',
+      width: 'auto',
+      boxSizing: 'border-box',
+      display: 'grid',
+      gridTemplateColumns: '24px minmax(0, 1fr) auto',
+      columnGap: '10px',
+      rowGap: '4px',
+      margin: '0 24px 12px',
+      padding: '12px',
+      border: '1px solid var(--dsw-alias-border-l2, rgba(127, 127, 127, 0.22))',
+      borderRadius: '12px',
+      background: 'var(--dsw-alias-bg-layer-2, #fff)',
+      color: 'var(--dsw-alias-label-primary, currentColor)',
+      boxShadow: '0 8px 28px rgba(0, 0, 0, 0.14)',
+      fontSize: '12px',
+      lineHeight: '18px',
+    });
+
+    const icon = document.createElement('span');
+    icon.textContent = palette.icon;
+    Object.assign(icon.style, {
+      gridRow: '1 / span 2',
+      display: 'inline-flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      width: '22px',
+      height: '22px',
+      borderRadius: '50%',
+      background: palette.background,
+      color: palette.color,
+      fontWeight: '700',
+      fontSize: '13px',
+    });
+
+    const title = document.createElement('strong');
+    title.textContent = displayTitle || (context.english ? 'Update status unavailable' : '更新状态未知');
+    title.style.fontSize = '13px';
+    title.style.fontWeight = '600';
+
+    const close = document.createElement('button');
+    close.type = 'button';
+    close.textContent = '×';
+    close.title = context.english ? 'Dismiss' : '关闭提示';
+    close.setAttribute('aria-label', context.english ? 'Dismiss update status' : '关闭更新提示');
+    Object.assign(close.style, {
+      width: '20px',
+      height: '20px',
+      padding: '0',
+      border: '0',
+      background: 'transparent',
+      color: 'var(--dsw-alias-label-secondary, #68707a)',
+      cursor: 'pointer',
+      fontSize: '16px',
+      lineHeight: '20px',
+    });
+    close.addEventListener('click', removeUpdateFeedback);
+
+    const message = document.createElement('div');
+    message.textContent = displayMessage || (context.english ? 'Please try again later.' : '请稍后重试。');
+    Object.assign(message.style, {
+      gridColumn: '2 / 4',
+      color: 'var(--dsw-alias-label-secondary, #68707a)',
+      overflowWrap: 'anywhere',
+    });
+
+    feedback.append(icon, title, close, message);
+
+    if (status === 'available') {
+      const install = document.createElement('button');
+      install.type = 'button';
+      install.textContent = context.english ? 'Update now' : '立即更新';
+      Object.assign(install.style, {
+        gridColumn: '2 / 4',
+        justifySelf: 'start',
+        marginTop: '6px',
+        height: '28px',
+        padding: '0 12px',
+        border: '0',
+        borderRadius: '14px',
+        background: 'var(--dsw-alias-interactive-primary, #1769d2)',
+        color: '#fff',
+        cursor: 'pointer',
+        fontSize: '12px',
+        fontWeight: '500',
+      });
+      install.addEventListener('click', async () => {
+        install.disabled = true;
+        install.textContent = context.english ? 'Downloading…' : '正在下载更新…';
+        install.style.cursor = 'wait';
+        title.textContent = context.english ? 'Preparing the update' : '正在准备更新';
+        message.textContent = context.english
+          ? 'The installer will be downloaded and verified first. The app restarts automatically when installation finishes.'
+          : '将先下载并校验安装包，完成后应用会自动重启。';
+        try {
+          await invoke('install_available_update');
+        } catch (error) {
+          console.error('[updater] install command failed', error);
+          renderUpdateFeedback(context, {
+            status: 'installError',
+            title: '更新未完成',
+            message: typeof error === 'string' && error.trim() ? error : '更新下载或安装未能完成，应用仍可继续使用。',
+          });
+        }
+      });
+      feedback.appendChild(install);
+    }
+
+    // The Settings content column is a flex stack: header, then options.
+    // Insert the card in that flow so it shortens the scrollable options area
+    // instead of covering the first settings rows.
+    context.header.insertAdjacentElement('afterend', feedback);
+
+    if (status !== 'available') {
+      feedbackTimer = window.setTimeout(removeUpdateFeedback, status === 'latest' ? 4000 : 6500);
+    }
+  };
+
+  const presentCachedUpdate = async () => {
+    const context = findSettingsContext();
+    const button = document.getElementById('dsh-desktop-update-button');
+    if (!context || !(button instanceof HTMLButtonElement)) return;
+    try {
+      const result = await invoke('get_cached_update_status');
+      if (result?.status !== 'available' || !context.dialog.isConnected) return;
+      button.dataset.updateAvailable = 'true';
+      if (!button.disabled) {
+        button.textContent = context.english ? '↑ Update available' : '↑ 有新版本';
+        button.title = context.english ? 'A DSH Desktop update is available' : 'DSH Desktop 有可用更新';
+        button.setAttribute('aria-label', button.title);
+      }
+      renderUpdateFeedback(context, result);
+    } catch (error) {
+      console.error('[updater] cached status command failed', error);
+    }
+  };
+
+  const mountUpdateButton = () => {
+    if (typeof invoke !== 'function' || !document.body) return;
+    const context = findSettingsContext();
+    if (!context) return;
+    const language = context.english ? 'en' : 'zh';
+    const existing = document.getElementById('dsh-desktop-update-button');
+    if (existing instanceof HTMLButtonElement) {
+      // Language can change while Settings remains open. Recreate our
+      // shell-owned controls so their visible and accessible copy follows it.
+      if (existing.dataset.updateLanguage === language) return;
+      removeUpdateFeedback();
+      existing.remove();
+    }
+    const { actions } = context;
+    const ui = context.english
+      ? { idle: '↻ Check for updates', available: '↑ Update available', checking: 'Checking…', title: 'Check for DSH Desktop updates', availableTitle: 'A DSH Desktop update is available' }
+      : { idle: '↻ 检查更新', available: '↑ 有新版本', checking: '正在检查…', title: '检查 DSH Desktop 更新', availableTitle: 'DSH Desktop 有可用更新' };
+
+    const button = document.createElement('button');
+    button.id = 'dsh-desktop-update-button';
+    button.type = 'button';
+    button.dataset.updateLanguage = language;
+    button.textContent = ui.idle;
+    button.title = ui.title;
+    button.setAttribute('aria-label', ui.title);
+    const peerAction = actions.querySelector('button');
+    if (peerAction?.className) {
+      // Adopt DSH's own outline/small Button classes (the neighboring
+      // "Open config file" action), so themes and future token changes match.
+      button.className = peerAction.className;
+    } else {
+      // The neighboring async action may not have loaded yet. This fallback is
+      // the same Button outline/small token contract, not a guessed color.
+      Object.assign(button.style, {
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: '4px',
+        height: '28px',
+        padding: '0 10px',
+        border: '1px solid var(--dsw-alias-border-l2)',
+        borderRadius: '14px',
+        background: 'transparent',
+        color: 'var(--dsw-alias-label-primary, currentColor)',
+        fontSize: '12px',
+        lineHeight: '18px',
+        cursor: 'pointer',
+      });
+    }
+    button.style.flex = 'none';
+    button.style.transition = 'opacity 120ms ease, background 120ms ease';
+    const setIdleLabel = () => {
+      const available = button.dataset.updateAvailable === 'true';
+      button.textContent = available ? ui.available : ui.idle;
+      button.title = available ? ui.availableTitle : ui.title;
+      button.setAttribute('aria-label', button.title);
+    };
+    button.addEventListener('mouseenter', () => {
+      if (!button.disabled) button.style.background = 'var(--dsw-alias-interactive-bg-hover, rgba(127, 127, 127, 0.12))';
+    });
+    button.addEventListener('mouseleave', () => {
+      button.style.background = 'transparent';
+    });
+    button.addEventListener('click', async () => {
+      if (button.disabled) return;
+      button.disabled = true;
+      button.textContent = ui.checking;
+      button.style.cursor = 'wait';
+      button.style.opacity = '0.72';
+      removeUpdateFeedback();
+      try {
+        const result = await invoke('check_for_updates_manual');
+        button.dataset.updateAvailable = result?.status === 'available' ? 'true' : 'false';
+        renderUpdateFeedback(context, result);
+      } catch (error) {
+        console.error('[updater] manual check command failed', error);
+        renderUpdateFeedback(context, {
+          status: 'serviceError',
+          title: '暂时无法检查更新',
+          message: '更新功能暂时不可用，请重启应用后再试。',
+        });
+      } finally {
+        button.disabled = false;
+        setIdleLabel();
+        button.style.cursor = 'pointer';
+        button.style.opacity = '1';
+      }
+    });
+    actions.appendChild(button);
+
+    // The startup check is silent and non-blocking. If it found a release,
+    // surface it the next time Settings opens instead of interrupting work.
+    presentCachedUpdate();
+  };
+
+  const watchForSettings = () => {
+    mountUpdateButton();
+    new MutationObserver(mountUpdateButton).observe(document.body, { childList: true, subtree: true });
+  };
+  window.addEventListener('dsh-desktop-update-available', presentCachedUpdate);
+  if (document.body) watchForSettings();
+  else document.addEventListener('DOMContentLoaded', watchForSettings, { once: true });
 })();
 "#;
 
 /// Managed handle to the spawned server process (killed on app exit).
 struct ServerHandle(Mutex<Option<Child>>);
+
+/// Latest actionable result from the automatic startup check. Only an
+/// available release is cached; normal no-update and transient error states
+/// remain silent until the user explicitly checks in Settings.
+struct UpdateStatusState(Mutex<Option<ManualUpdateResult>>);
 
 /// Where the app writes its diagnostics (the OS app-log directory).
 static LOG_PATH: OnceLock<PathBuf> = OnceLock::new();
@@ -517,117 +816,408 @@ fn shutdown_server(app: &AppHandle) {
 // Application updates
 // ---------------------------------------------------------------------------
 
-/// Keep release notes useful in a native message box without letting a very
-/// long GitHub release body create an unusable dialog.
-fn concise_release_notes(notes: Option<&str>) -> String {
-    const MAX_CHARS: usize = 1_200;
-    let notes = notes.map(str::trim).filter(|notes| !notes.is_empty());
-    let Some(notes) = notes else {
-        return "本次更新未提供更新说明。".into();
+/// Perform the automatic startup check. Transient failures remain in the log
+/// so startup is never interrupted. Manual checks use the structured command
+/// response below and render feedback inside the Settings dialog instead.
+async fn run_automatic_update_check(app: AppHandle) {
+    log("[updater] automatic check started");
+    let updater = match app.updater() {
+        Ok(updater) => updater,
+        Err(error) => {
+            log(&format!("[updater] initialization failed: {error}"));
+            return;
+        }
+    };
+    let update = match updater.check().await {
+        Ok(Some(update)) => update,
+        Ok(None) => {
+            log("[updater] already on the latest version");
+            return;
+        }
+        Err(error) => {
+            log(&format!("[updater] check failed: {error}"));
+            return;
+        }
     };
 
-    let mut chars = notes.chars();
-    let shortened: String = chars.by_ref().take(MAX_CHARS).collect();
-    if chars.next().is_some() {
-        format!("{shortened}\n……")
-    } else {
-        shortened
+    log(&format!(
+        "[updater] update available: {} -> {}",
+        update.current_version, update.version
+    ));
+    let result = available_update_result(&update.current_version, &update.version);
+    cache_actionable_update(&app, Some(result));
+    if let Some(window) = app.get_webview_window("main") {
+        // If Settings is already open, surface the completed automatic check
+        // immediately. The Rust cache remains the fallback across page loads.
+        let _ = window.eval("window.dispatchEvent(new Event('dsh-desktop-update-available'))");
     }
 }
 
-/// Check once per launch. Check failures stay in the diagnostic log so a
-/// temporary network or GitHub outage never interrupts normal startup. Once
-/// the user accepts an offered update, download/install failures are surfaced.
-fn check_for_updates(app: AppHandle, window: WebviewWindow) {
+/// Check once per launch. Automatic check failures stay in the diagnostic log
+/// so a temporary network or GitHub outage never interrupts startup.
+fn check_for_updates(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
-        log("[updater] checking for updates");
-        let updater = match app.updater() {
-            Ok(updater) => updater,
-            Err(error) => {
-                log(&format!("[updater] initialization failed: {error}"));
-                return;
-            }
-        };
-        let update = match updater.check().await {
-            Ok(Some(update)) => update,
-            Ok(None) => {
-                log("[updater] already on the latest version");
-                return;
-            }
-            Err(error) => {
-                log(&format!("[updater] check failed: {error}"));
-                return;
-            }
-        };
-
-        log(&format!(
-            "[updater] update available: {} -> {}",
-            update.current_version, update.version
-        ));
-        let message = format!(
-            "当前版本：{}\n新版本：{}\n\n{}\n\n现在下载并安装吗？安装完成后应用会重新启动。",
-            update.current_version,
-            update.version,
-            concise_release_notes(update.body.as_deref())
-        );
-        let accepted = app
-            .dialog()
-            .message(message)
-            .title("发现新版本")
-            .kind(MessageDialogKind::Info)
-            .buttons(MessageDialogButtons::OkCancelCustom(
-                "下载并安装".into(),
-                "稍后".into(),
-            ))
-            .blocking_show();
-        if !accepted {
-            log("[updater] update postponed by user");
-            return;
-        }
-
-        log("[updater] downloading update");
-        let _ = window.set_title("DSH Desktop — 正在下载更新…");
-        let progress_window = window.clone();
-        let finished_window = window.clone();
-        let mut downloaded = 0_u64;
-        let mut last_reported_percent = 0_u64;
-        let result = update
-            .download_and_install(
-                move |chunk_length, content_length| {
-                    downloaded = downloaded.saturating_add(chunk_length as u64);
-                    let Some(total) = content_length.filter(|total| *total > 0) else {
-                        return;
-                    };
-                    let percent = downloaded.saturating_mul(100) / total;
-                    if percent >= last_reported_percent.saturating_add(5) || percent >= 100 {
-                        last_reported_percent = percent;
-                        let _ = progress_window
-                            .set_title(&format!("DSH Desktop — 正在下载更新 {percent}%"));
-                    }
-                },
-                move || {
-                    log("[updater] download complete; installing");
-                    let _ = finished_window.set_title("DSH Desktop — 正在安装更新…");
-                },
-            )
-            .await;
-
-        if let Err(error) = result {
-            log(&format!("[updater] install failed: {error}"));
-            let _ = window.set_title(APP_WINDOW_TITLE);
-            app.dialog()
-                .message(format!(
-                    "更新未能安装：{error}\n\n应用可以继续使用，稍后重新启动会再次检查。"
-                ))
-                .title("更新失败")
-                .kind(MessageDialogKind::Error)
-                .show(|_| {});
-            return;
-        }
-
-        log("[updater] update installed; restarting");
-        app.restart();
+        run_automatic_update_check(app).await;
     });
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ManualUpdateResult {
+    status: &'static str,
+    title: &'static str,
+    message: String,
+    available_version: Option<String>,
+}
+
+fn cache_actionable_update(app: &AppHandle, result: Option<ManualUpdateResult>) {
+    let Some(state) = app.try_state::<UpdateStatusState>() else {
+        return;
+    };
+    match state.0.lock() {
+        Ok(mut cached) => *cached = result,
+        Err(error) => log(&format!("[updater] update status lock poisoned: {error}")),
+    };
+}
+
+#[tauri::command]
+fn get_cached_update_status(state: State<'_, UpdateStatusState>) -> Option<ManualUpdateResult> {
+    state.0.lock().ok().and_then(|cached| cached.clone())
+}
+
+fn take_cached_update_version(state: &UpdateStatusState) -> Result<String, String> {
+    let mut cached = state
+        .0
+        .lock()
+        .map_err(|_| "更新状态暂时不可用，请重启应用后再试。".to_string())?;
+    cached
+        .take()
+        .and_then(|result| result.available_version)
+        .ok_or_else(|| "请先检查更新，确认有可安装的新版本后再试。".to_string())
+}
+
+impl ManualUpdateResult {
+    fn new(status: &'static str, title: &'static str, message: String) -> Self {
+        Self {
+            status,
+            title,
+            message,
+            available_version: None,
+        }
+    }
+}
+
+fn available_update_result(current_version: &str, available_version: &str) -> ManualUpdateResult {
+    ManualUpdateResult {
+        status: "available",
+        title: "发现新版本",
+        message: format!(
+            "可从当前版本 {current_version} 更新到 {available_version}。点击“立即更新”后将下载、校验并安装。"
+        ),
+        available_version: Some(available_version.to_string()),
+    }
+}
+
+fn unpublished_update_result(current_version: &str) -> ManualUpdateResult {
+    ManualUpdateResult::new(
+        "unpublished",
+        "暂无可用更新",
+        format!("当前版本 {current_version}。更新通道尚未发布可安装的新版本。"),
+    )
+}
+
+fn update_service_error_result() -> ManualUpdateResult {
+    ManualUpdateResult::new(
+        "serviceError",
+        "更新服务暂时不可用",
+        "服务端暂时无法响应更新请求，应用仍可正常使用，请稍后再试。".into(),
+    )
+}
+
+fn release_probe_http_result(
+    status: reqwest::StatusCode,
+    current_version: &str,
+) -> ManualUpdateResult {
+    if status == reqwest::StatusCode::NOT_FOUND {
+        unpublished_update_result(current_version)
+    } else {
+        update_service_error_result()
+    }
+}
+
+fn configured_update_endpoint(app: &AppHandle) -> Option<String> {
+    app.config()
+        .plugins
+        .0
+        .get("updater")?
+        .get("endpoints")?
+        .as_array()?
+        .first()?
+        .as_str()
+        .map(ToOwned::to_owned)
+}
+
+fn friendly_check_error(error: &tauri_plugin_updater::Error) -> ManualUpdateResult {
+    use tauri_plugin_updater::Error;
+
+    match error {
+        // The updater folds every non-successful HTTP status into this one
+        // variant. The async probe below distinguishes 404 from server errors.
+        Error::ReleaseNotFound => update_service_error_result(),
+        Error::Reqwest(_) | Error::Network(_) => ManualUpdateResult::new(
+            "offline",
+            "暂时无法连接更新服务",
+            "请检查网络连接，恢复后可再次检查。".into(),
+        ),
+        Error::TargetNotFound(_) | Error::TargetsNotFound(_) => ManualUpdateResult::new(
+            "incompatible",
+            "当前设备暂无适配版本",
+            "已找到更新信息，但尚未提供适用于当前系统和架构的安装包。".into(),
+        ),
+        Error::Serialization(_) => ManualUpdateResult::new(
+            "serviceError",
+            "更新信息暂时不可用",
+            "服务端返回的更新信息不完整，请稍后再试。".into(),
+        ),
+        _ => ManualUpdateResult::new(
+            "serviceError",
+            "暂时无法检查更新",
+            "更新服务暂时不可用，应用仍可正常使用，请稍后再试。".into(),
+        ),
+    }
+}
+
+async fn friendly_check_error_with_probe(
+    app: &AppHandle,
+    error: &tauri_plugin_updater::Error,
+    current_version: &str,
+) -> ManualUpdateResult {
+    if !matches!(error, tauri_plugin_updater::Error::ReleaseNotFound) {
+        return friendly_check_error(error);
+    }
+
+    let Some(endpoint) = configured_update_endpoint(app) else {
+        log("[updater] no endpoint available for release status probe");
+        return update_service_error_result();
+    };
+    let client = match reqwest::Client::builder()
+        .timeout(Duration::from_secs(8))
+        .user_agent(format!("DSH-Desktop/{}", app.package_info().version))
+        .build()
+    {
+        Ok(client) => client,
+        Err(error) => {
+            log(&format!("[updater] failed to build status probe: {error}"));
+            return update_service_error_result();
+        }
+    };
+
+    match client.get(endpoint).send().await {
+        Ok(response) => {
+            let status = response.status();
+            log(&format!(
+                "[updater] release manifest probe returned HTTP {}",
+                status
+            ));
+            release_probe_http_result(status, current_version)
+        }
+        Err(error) => {
+            log(&format!("[updater] release manifest probe failed: {error}"));
+            ManualUpdateResult::new(
+                "offline",
+                "暂时无法连接更新服务",
+                "请检查网络连接，恢复后可再次检查。".into(),
+            )
+        }
+    }
+}
+
+#[cfg(test)]
+mod updater_status_tests {
+    use super::*;
+
+    #[test]
+    fn a_bare_release_not_found_is_not_assumed_to_be_a_404() {
+        let result = friendly_check_error(&tauri_plugin_updater::Error::ReleaseNotFound);
+
+        assert_eq!(result.status, "serviceError");
+        assert_eq!(result.title, "更新服务暂时不可用");
+    }
+
+    #[test]
+    fn a_404_manifest_probe_is_a_neutral_state() {
+        let result = release_probe_http_result(reqwest::StatusCode::NOT_FOUND, "0.1.0");
+
+        assert_eq!(result.status, "unpublished");
+        assert_eq!(result.title, "暂无可用更新");
+        assert!(result.message.contains("0.1.0"));
+    }
+
+    #[test]
+    fn a_server_error_is_not_misreported_as_no_update() {
+        let result = release_probe_http_result(reqwest::StatusCode::INTERNAL_SERVER_ERROR, "0.1.0");
+
+        assert_eq!(result.status, "serviceError");
+        assert_eq!(result.title, "更新服务暂时不可用");
+    }
+
+    #[test]
+    fn missing_platform_package_is_explained_separately() {
+        let error = tauri_plugin_updater::Error::TargetNotFound("darwin-aarch64".into());
+        let result = friendly_check_error(&error);
+
+        assert_eq!(result.status, "incompatible");
+        assert_eq!(result.title, "当前设备暂无适配版本");
+    }
+
+    #[test]
+    fn malformed_manifest_is_a_service_error_without_raw_details() {
+        let parse_error = serde_json::from_str::<serde_json::Value>("{").unwrap_err();
+        let error = tauri_plugin_updater::Error::Serialization(parse_error);
+        let result = friendly_check_error(&error);
+
+        assert_eq!(result.status, "serviceError");
+        assert_eq!(result.title, "更新信息暂时不可用");
+        assert!(!result.message.contains("line 1"));
+    }
+
+    #[test]
+    fn install_authorization_is_one_shot_and_version_bound() {
+        let state = UpdateStatusState(Mutex::new(Some(available_update_result("0.1.0", "0.2.0"))));
+
+        assert_eq!(take_cached_update_version(&state).unwrap(), "0.2.0");
+        assert!(take_cached_update_version(&state).is_err());
+    }
+}
+
+/// Manual checks return a user-facing state to the page. No native system
+/// dialog is shown for ordinary results or failures.
+#[tauri::command]
+async fn check_for_updates_manual(app: AppHandle) -> ManualUpdateResult {
+    log("[updater] manual check started");
+    let current_version = app.package_info().version.to_string();
+    let updater = match app.updater() {
+        Ok(updater) => updater,
+        Err(error) => {
+            log(&format!("[updater] manual initialization failed: {error}"));
+            return ManualUpdateResult::new(
+                "serviceError",
+                "更新功能暂时不可用",
+                "无法初始化更新服务，请重启应用后再试。".into(),
+            );
+        }
+    };
+
+    let result = match updater.check().await {
+        Ok(Some(update)) => {
+            log(&format!(
+                "[updater] manual update available: {} -> {}",
+                update.current_version, update.version
+            ));
+            available_update_result(&update.current_version, &update.version)
+        }
+        Ok(None) => {
+            log("[updater] manual check: already on the latest version");
+            ManualUpdateResult::new(
+                "latest",
+                "已是最新版本",
+                format!("当前版本 {current_version}，暂时不需要更新。"),
+            )
+        }
+        Err(error) => {
+            log(&format!("[updater] manual check failed: {error}"));
+            friendly_check_error_with_probe(&app, &error, &current_version).await
+        }
+    };
+    let cached = (result.status == "available").then(|| result.clone());
+    cache_actionable_update(&app, cached);
+    result
+}
+
+/// The in-app "Update now" action is itself the user's confirmation. Recheck
+/// immediately before downloading so an old or replaced release is never used.
+#[tauri::command]
+async fn install_available_update(app: AppHandle, window: WebviewWindow) -> Result<(), String> {
+    log("[updater] manual install requested");
+    let expected_version = {
+        let state = app
+            .try_state::<UpdateStatusState>()
+            .ok_or_else(|| "更新状态暂时不可用，请重启应用后再试。".to_string())?;
+        take_cached_update_version(&state)?
+    };
+    let updater = app.updater().map_err(|error| {
+        log(&format!(
+            "[updater] manual install initialization failed: {error}"
+        ));
+        "更新功能暂时不可用，请重启应用后再试。".to_string()
+    })?;
+    let update = updater
+        .check()
+        .await
+        .map_err(|error| {
+            log(&format!("[updater] manual install recheck failed: {error}"));
+            match error {
+                tauri_plugin_updater::Error::Reqwest(_)
+                | tauri_plugin_updater::Error::Network(_) => {
+                    "网络连接不可用，更新尚未开始，请检查网络后重试。"
+                }
+                _ => "暂时无法获取安装包，请稍后重试。",
+            }
+            .to_string()
+        })?
+        .ok_or_else(|| "当前已是最新版本，无需安装。".to_string())?;
+
+    if update.version != expected_version {
+        log(&format!(
+            "[updater] release changed before install: expected {expected_version}, got {}",
+            update.version
+        ));
+        let refreshed = available_update_result(&update.current_version, &update.version);
+        cache_actionable_update(&app, Some(refreshed));
+        return Err(format!(
+            "可用版本已更新为 {}，请重新检查并确认。",
+            update.version
+        ));
+    }
+
+    log(&format!(
+        "[updater] manually downloading update {} -> {}",
+        update.current_version, update.version
+    ));
+    let _ = window.set_title("DSH Desktop — 正在下载更新…");
+    let progress_window = window.clone();
+    let finished_window = window.clone();
+    let mut downloaded = 0_u64;
+    let mut last_reported_percent = 0_u64;
+    let result = update
+        .download_and_install(
+            move |chunk_length, content_length| {
+                downloaded = downloaded.saturating_add(chunk_length as u64);
+                let Some(total) = content_length.filter(|total| *total > 0) else {
+                    return;
+                };
+                let percent = downloaded.saturating_mul(100) / total;
+                if percent >= last_reported_percent.saturating_add(5) || percent >= 100 {
+                    last_reported_percent = percent;
+                    let _ = progress_window
+                        .set_title(&format!("DSH Desktop — 正在下载更新 {percent}%"));
+                }
+            },
+            move || {
+                log("[updater] manual download complete; installing");
+                let _ = finished_window.set_title("DSH Desktop — 正在安装更新…");
+            },
+        )
+        .await;
+
+    if let Err(error) = result {
+        log(&format!("[updater] manual install failed: {error}"));
+        let _ = window.set_title(APP_WINDOW_TITLE);
+        return Err("更新下载或安装未能完成，应用仍可继续使用，请稍后重试。".into());
+    }
+
+    log("[updater] manual update installed; restarting");
+    app.restart();
 }
 
 /// Show a native error dialog and keep the splash window with an error state.
@@ -673,9 +1263,14 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .invoke_handler(tauri::generate_handler![
+            check_for_updates_manual,
+            get_cached_update_status,
+            install_available_update
+        ])
         .on_page_load(|webview, payload| {
             if matches!(payload.event(), tauri::webview::PageLoadEvent::Finished) {
-                let _ = webview.eval(WINDOW_OPEN_SHIM);
+                let _ = webview.eval(PAGE_SHIM);
             }
         })
         .setup(|app| {
@@ -692,10 +1287,11 @@ pub fn run() {
             let window = app
                 .get_webview_window("main")
                 .expect("main window missing from config");
+            app.manage(UpdateStatusState(Mutex::new(None)));
 
             // Keep recovery independent from the bundled DSH/Node runtime.
             // A broken runtime is exactly when an in-app update is most useful.
-            check_for_updates(handle.clone(), window.clone());
+            check_for_updates(handle.clone());
 
             let root = match resolve_dsh_root(handle, config.dsh_root) {
                 Ok(root) => root,

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-get-cached-update-status"
+description = "Enables the get_cached_update_status command without any pre-configured scope."
+commands.allow = ["get_cached_update_status"]
+
+[[permission]]
+identifier = "deny-get-cached-update-status"
+description = "Denies the get_cached_update_status command without any pre-configured scope."
+commands.deny = ["get_cached_update_status"]
