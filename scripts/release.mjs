@@ -268,7 +268,10 @@ function runNode(label, script, scriptArgs = []) {
 
 /** Run the Tauri CLI, using the globally installed binary or an npx fallback. */
 function runTauri(label, tauriArgs) {
-  const direct = spawnSync('tauri', tauriArgs, { stdio: 'inherit', shell: true, cwd: PROJECT })
+  // Windows needs a shell to resolve npm's `.cmd` shims. On Unix, using a
+  // shell would re-parse individual arguments and split bundle paths that
+  // contain spaces (for example `DSH Desktop_0.1.6_amd64.deb`).
+  const direct = spawnSync('tauri', tauriArgs, { stdio: 'inherit', shell: IS_WIN, cwd: PROJECT })
   console.log(`[tauri] status=${direct.status} signal=${direct.signal}`)
   if (direct.status === 0) return
 
@@ -276,7 +279,7 @@ function runTauri(label, tauriArgs) {
   const fallback = spawnSync(
     'npx',
     ['--yes', '@tauri-apps/cli', ...tauriArgs],
-    { stdio: 'inherit', shell: true, cwd: PROJECT },
+    { stdio: 'inherit', shell: IS_WIN, cwd: PROJECT },
   )
   console.log(`[npx] status=${fallback.status} signal=${fallback.signal}`)
   if (fallback.status !== 0) fail(`${label} failed (exit ${fallback.status})`)
@@ -408,21 +411,19 @@ if (NO_UPDATER) {
 if (process.env.TAURI_VERBOSE === '1') buildArgs.push('-v')
 runTauri('tauri build', buildArgs)
 
-// Tauri emits a signed AppImage updater automatically. The updater plugin can
-// also install Debian packages, but the bundler does not currently emit their
-// minisign signatures, so sign each .deb explicitly for the installer-specific
-// `linux-<arch>-deb` manifest target.
+// Current Tauri versions emit updater signatures for both AppImage and Debian
+// bundles. Validate the Debian signature explicitly because the updater
+// manifest exposes a separate `linux-<arch>-deb` target.
 if (process.platform === 'linux' && !NO_UPDATER) {
-  step('11/12 sign Debian updater artifact')
+  step('11/12 verify Debian updater signature')
   const debDir = join(PROJECT, 'src-tauri', 'target', 'release', 'bundle', 'deb')
   const debs = existsSync(debDir)
     ? readdirSync(debDir).filter((file) => file.endsWith('.deb')).map((file) => join(debDir, file))
     : []
-  if (debs.length === 0) fail('Debian bundle not found for updater signing')
+  if (debs.length === 0) fail('Debian bundle not found for updater verification')
   for (const deb of debs) {
-    rmSync(`${deb}.sig`, { force: true })
-    runTauri(`sign ${basename(deb)}`, ['signer', 'sign', deb])
     if (!existsSync(`${deb}.sig`)) fail(`Debian updater signature not generated: ${deb}.sig`)
+    console.log(`Debian updater signature: ${deb}.sig`)
   }
 }
 
