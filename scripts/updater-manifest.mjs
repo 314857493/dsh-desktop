@@ -99,7 +99,11 @@ function findUpdaterArtifacts(bundleRoot) {
 }
 
 function releaseAssetUrl(repo, tag, fileName) {
-  return `https://github.com/${repo}/releases/download/${encodeURIComponent(tag)}/${encodeURIComponent(fileName)}`
+  // GitHub normalizes whitespace in uploaded release asset names to dots.
+  // Build the URL from that public name; otherwise a local bundle such as
+  // `DSH Desktop_0.1.7_x64-setup.exe` produces a valid-looking URL that 404s.
+  const releaseAssetName = fileName.replace(/\s/g, '.')
+  return `https://github.com/${repo}/releases/download/${encodeURIComponent(tag)}/${encodeURIComponent(releaseAssetName)}`
 }
 
 function writeJson(path, data) {
