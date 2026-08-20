@@ -4,14 +4,14 @@
  *
  * Usage:
  *   node scripts/release.mjs                          # fetch remote master, build, package
- *   node scripts/release.mjs --ref v0.1.0             # release a specific tag/branch/commit
+ *   node scripts/release.mjs --ref dsh-v0.1.0-rc.8    # release a specific tag/branch/commit
  *   node scripts/release.mjs --local                  # use the local checkout instead of fetching
  *   node scripts/release.mjs --repo <本地 DSH 源码路径>
  *   node scripts/release.mjs --remote-url <url>       # custom remote
  *   node scripts/release.mjs --install                # silently install after build
  *   node scripts/release.mjs --skip-boot-test         # skip the runtime smoke test
  *   node scripts/release.mjs --no-updater              # test package; do not require/sign updater artifacts
- *   node scripts/release.mjs --version 0.1.4          # stamp the bundle version (tauri.conf.json + Cargo.toml)
+ *   node scripts/release.mjs --version 0.1.4          # stamp the bundle version (Tauri + Cargo metadata)
  *
  * Pipeline (remote mode): fetch -> pnpm install -> pnpm build -> pnpm deploy
  *           -> patch-runtime -> ensure-fallback -> trim-runtime
@@ -85,7 +85,8 @@ if (!NO_UPDATER) {
 // ---------- bundle version stamping ----------
 // --version overrides the version embedded in the artifacts (the name shown
 // in installers and the app metadata). Tauri reads the version from
-// tauri.conf.json; Cargo.toml is synced to keep the crate consistent.
+// tauri.conf.json; Cargo.toml and Cargo.lock are synced to keep the crate
+// metadata consistent in clean and cached builds.
 // CI passes the tag name (e.g. `--version v0.1.4`); a leading `v` is stripped.
 const VERSION_ARG = (value('--version') ?? '').trim()
 if (VERSION_ARG !== '') {
@@ -95,16 +96,21 @@ if (VERSION_ARG !== '') {
   }
   const confPath = join(PROJECT, 'src-tauri', 'tauri.conf.json')
   const cargoPath = join(PROJECT, 'src-tauri', 'Cargo.toml')
-  for (const [path, pattern] of [
-    [confPath, /"version"\s*:\s*"[^"]*"/],
-    [cargoPath, /^version\s*=\s*"[^"]*"/m],
+  const cargoLockPath = join(PROJECT, 'src-tauri', 'Cargo.lock')
+  for (const [path, pattern, replacement] of [
+    [confPath, /"version"\s*:\s*"[^"]*"/, `"version": "${clean}"`],
+    [cargoPath, /^version\s*=\s*"[^"]*"/m, `version = "${clean}"`],
+    [
+      cargoLockPath,
+      /(\[\[package\]\]\nname = "dsh-desktop"\nversion = ")[^"]*(")/,
+      `$1${clean}$2`,
+    ],
   ]) {
     const text = readFileSync(path, 'utf8')
     if (!pattern.test(text)) fail(`未找到 version 字段: ${path}`)
-    writeFileSync(path, text.replace(pattern, (m) =>
-      m.startsWith('"version"') ? `"version": "${clean}"` : `version = "${clean}"`))
+    writeFileSync(path, text.replace(pattern, replacement))
   }
-  console.log(`version synced: ${clean} (src-tauri/tauri.conf.json + src-tauri/Cargo.toml)`)
+  console.log(`version synced: ${clean} (Tauri config + Cargo manifest/lock)`)
 }
 
 // ---------- remote source (default) vs local checkout ----------

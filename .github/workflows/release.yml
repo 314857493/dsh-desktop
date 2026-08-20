@@ -3,13 +3,92 @@ name: Release
 on:
   push:
     tags: ['v*']
+  schedule:
+    # Avoid the busy start of the hour. Scheduled workflows run from the
+    # default branch and process one unseen upstream release per run.
+    - cron: '17 * * * *'
   workflow_dispatch:
+    inputs:
+      upstream_ref:
+        description: 'DeepSeek Harness tag/branch/commit (empty = pinned version)'
+        required: false
+        type: string
+      version:
+        description: 'Desktop semver (empty = current version, or next patch when publishing)'
+        required: false
+        type: string
+      publish:
+        description: 'Publish a GitHub Release after successful builds'
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: write
 
+concurrency:
+  group: dsh-desktop-release
+  cancel-in-progress: false
+
 jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      should_build: ${{ steps.metadata.outputs.should_build }}
+      should_publish: ${{ steps.metadata.outputs.should_publish }}
+      update_repository: ${{ steps.metadata.outputs.update_repository }}
+      desktop_version: ${{ steps.metadata.outputs.desktop_version }}
+      desktop_tag: ${{ steps.metadata.outputs.desktop_tag }}
+      upstream_ref: ${{ steps.metadata.outputs.upstream_ref }}
+      source_sha: ${{ steps.source.outputs.sha }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Record source commit
+        id: source
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve release metadata
+        id: metadata
+        run: |
+          node scripts/release-metadata.mjs prepare \
+            --event "$EVENT_NAME" \
+            --desktop-repo "$DESKTOP_REPOSITORY" \
+            --upstream-repo deepseek-ai/deepseek-harness \
+            --upstream-ref "$UPSTREAM_REF" \
+            --version "$DESKTOP_VERSION" \
+            --publish "$PUBLISH_RELEASE" \
+            --output release-metadata/metadata.json \
+            --release-notes release-metadata/release-notes.md \
+            --updater-notes release-metadata/updater-notes.md \
+            --github-output "$GITHUB_OUTPUT"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EVENT_NAME: ${{ github.event_name }}
+          DESKTOP_REPOSITORY: ${{ github.repository }}
+          UPSTREAM_REF: ${{ inputs.upstream_ref }}
+          DESKTOP_VERSION: ${{ github.ref_type == 'tag' && github.ref_name || inputs.version }}
+          PUBLISH_RELEASE: ${{ github.ref_type == 'tag' && 'true' || inputs.publish }}
+
+      - name: Upload release metadata
+        if: steps.metadata.outputs.should_build == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-metadata
+          path: release-metadata/
+          if-no-files-found: error
+
   build:
+    needs: prepare
+    if: needs.prepare.outputs.should_build == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -17,17 +96,18 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 24
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/setup@v1
         with:
           version: 11.7.0
+          install: false
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -46,7 +126,7 @@ jobs:
           sudo apt-get install -y libfuse2 || sudo apt-get install -y libfuse2t64
 
       - name: Cache cargo registry
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry
@@ -56,12 +136,12 @@ jobs:
       - name: Install tauri CLI
         run: npm install -g @tauri-apps/cli
 
-      - name: Run release pipeline (fetch DSH source -> build -> package)
-        # On tag pushes stamp the artifact version from the tag (v0.1.4 -> 0.1.4);
-        # manual dispatch has no version, so the checked-in defaults are used.
-        run: node scripts/release.mjs ${{ github.ref_type == 'tag' && format('--version {0}', github.ref_name) || '' }}
+      - name: Run release pipeline (fetch pinned DSH source -> build -> package)
+        run: node scripts/release.mjs --ref "$UPSTREAM_REF" --version "$DESKTOP_VERSION"
         env:
-          CI: "true"
+          UPSTREAM_REF: ${{ needs.prepare.outputs.upstream_ref }}
+          DESKTOP_VERSION: ${{ needs.prepare.outputs.desktop_version }}
+          CI: 'true'
           # Optional production macOS signing/notarization secrets. Tauri
           # ignores these on other platforms. release.mjs falls back to a
           # complete ad-hoc signature when APPLE_SIGNING_IDENTITY is empty.
@@ -73,25 +153,22 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           # linuxdeploy on CI: avoid FUSE (extract-and-run), skip strip issues,
           # and keep verbose output so bundler failures surface the real error.
-          APPIMAGE_EXTRACT_AND_RUN: "1"
-          NO_STRIP: "true"
-          TAURI_VERBOSE: "1"
-          # Tauri updater artifacts use a separate minisign key. Only the
-          # public key is embedded in tauri.conf.json; this private key lives
-          # exclusively in GitHub Actions secrets.
+          APPIMAGE_EXTRACT_AND_RUN: '1'
+          NO_STRIP: 'true'
+          TAURI_VERBOSE: '1'
+          # The public updater key is embedded in tauri.conf.json; the private
+          # key remains exclusively in GitHub Actions secrets.
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          # This project's updater key is deliberately passwordless because
-          # GitHub already encrypts the secret and CI cannot answer prompts.
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ''
 
       - name: Create updater manifest fragment
-        if: startsWith(github.ref, 'refs/tags/')
+        if: needs.prepare.outputs.should_publish == 'true'
         run: >-
           node scripts/updater-manifest.mjs
           --fragment src-tauri/target/release/bundle/updater-fragment-${{ runner.os }}.json
           --bundle-root src-tauri/target/release/bundle
-          --version ${{ github.ref_name }}
-          --tag ${{ github.ref_name }}
+          --version ${{ needs.prepare.outputs.desktop_version }}
+          --tag ${{ needs.prepare.outputs.desktop_tag }}
           --repo ${{ github.repository }}
 
       - name: Verify macOS app signature
@@ -107,32 +184,88 @@ jobs:
           codesign -dvv "$app_path"
 
       - name: Upload bundle artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: dsh-desktop-${{ matrix.os }}
           path: src-tauri/target/release/bundle/
           if-no-files-found: error
 
   release:
-    needs: build
-    if: startsWith(github.ref, 'refs/tags/')
+    needs: [prepare, build]
+    if: >-
+      always() &&
+      needs.prepare.outputs.should_publish == 'true' &&
+      needs.build.result == 'success'
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
+      - name: Checkout release source
+        uses: actions/checkout@v6
         with:
+          # Automated releases commit metadata on top of the exact source SHA
+          # that was built. A concurrent main update then makes the push fail
+          # safely instead of tagging unbuilt source.
+          ref: ${{ needs.prepare.outputs.update_repository == 'true' && needs.prepare.outputs.source_sha || github.ref }}
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Download release metadata
+        uses: actions/download-artifact@v8
+        with:
+          name: release-metadata
+          path: release-metadata/
+
+      - name: Download platform bundles
+        uses: actions/download-artifact@v8
+        with:
+          pattern: dsh-desktop-*
           path: artifacts/
           merge-multiple: true
 
+      - name: Update changelog and pinned versions
+        if: needs.prepare.outputs.update_repository == 'true'
+        run: |
+          node scripts/release-metadata.mjs apply --metadata release-metadata/metadata.json
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- \
+            .dsh-upstream.json \
+            CHANGELOG.md \
+            src-tauri/tauri.conf.json \
+            src-tauri/Cargo.toml \
+            src-tauri/Cargo.lock
+          if ! git diff --cached --quiet; then
+            git commit -m "chore(release): $DESKTOP_TAG"
+            git push origin "HEAD:$DEFAULT_BRANCH"
+          fi
+        env:
+          DESKTOP_TAG: ${{ needs.prepare.outputs.desktop_tag }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+
+      - name: Resolve release target
+        id: release-target
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
       - name: Merge updater manifest
-        run: node scripts/updater-manifest.mjs --merge-dir artifacts --output artifacts/latest.json
+        run: >-
+          node scripts/updater-manifest.mjs
+          --merge-dir artifacts
+          --output artifacts/latest.json
+          --notes-file release-metadata/updater-notes.md
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
+          tag_name: ${{ needs.prepare.outputs.desktop_tag }}
+          target_commitish: ${{ steps.release-target.outputs.sha }}
+          name: DSH Desktop ${{ needs.prepare.outputs.desktop_tag }}
+          body_path: release-metadata/release-notes.md
+          generate_release_notes: true
+          make_latest: true
+          fail_on_unmatched_files: true
           files: |
             artifacts/**/*-setup.exe
             artifacts/**/*-setup.exe.sig
@@ -144,4 +277,3 @@ jobs:
             artifacts/**/*.app.tar.gz
             artifacts/**/*.app.tar.gz.sig
             artifacts/latest.json
-          generate_release_notes: true

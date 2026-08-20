@@ -13,7 +13,8 @@
  *
  * Merge mode:
  *   node scripts/updater-manifest.mjs \
- *     --merge-dir <downloaded-artifacts/> --output <latest.json>
+ *     --merge-dir <downloaded-artifacts/> --output <latest.json> \
+ *     [--notes-file <updater-notes.md>]
  */
 import {
   existsSync,
@@ -198,9 +199,12 @@ function mergeFragments() {
   }
 
   const [version] = versions
+  const notesPath = value('--notes-file')
+  const notes = notesPath ? readFileSync(resolve(notesPath), 'utf8').trim() : `DSH Desktop ${version}`
+  if (!notes) fail('updater notes must not be empty')
   writeJson(output, {
     version,
-    notes: `DSH Desktop ${version}`,
+    notes,
     pub_date: new Date().toISOString(),
     platforms,
   })
