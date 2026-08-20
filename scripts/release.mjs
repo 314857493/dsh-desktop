@@ -55,7 +55,7 @@ const USE_LOCAL = flag('--local') || args.includes('--repo')
 const repoArg = value('--repo')
 const projectArg = value('--project')
 const REMOTE_URL = value('--remote-url') ?? 'https://github.com/deepseek-ai/deepseek-harness.git'
-const REF = value('--ref') ?? 'master'
+const REF = (value('--ref') ?? process.env.DSH_DESKTOP_UPSTREAM_REF ?? '').trim() || 'master'
 const PROJECT = projectArg ?? project
 
 // Formal builds must sign updater artifacts. Development machines can still
@@ -87,8 +87,9 @@ if (!NO_UPDATER) {
 // in installers and the app metadata). Tauri reads the version from
 // tauri.conf.json; Cargo.toml and Cargo.lock are synced to keep the crate
 // metadata consistent in clean and cached builds.
-// CI passes the tag name (e.g. `--version v0.1.4`); a leading `v` is stripped.
-const VERSION_ARG = (value('--version') ?? '').trim()
+// CI passes metadata through environment variables so the same invocation
+// works under Bash and PowerShell. Explicit CLI options still take precedence.
+const VERSION_ARG = (value('--version') ?? process.env.DSH_DESKTOP_VERSION ?? '').trim()
 if (VERSION_ARG !== '') {
   const clean = VERSION_ARG.replace(/^v/, '')
   if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(clean)) {

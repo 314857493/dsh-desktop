@@ -80,7 +80,7 @@ test('applyReleaseMetadata synchronizes versions and promotes Unreleased notes',
   }
 })
 
-test('release pipeline stamps all version files before packaging', () => {
+test('release pipeline reads CI metadata from the environment before packaging', () => {
   const project = mkdtempSync(join(tmpdir(), 'dsh-release-stamp-'))
   try {
     mkdirSync(join(project, 'src-tauri'), { recursive: true })
@@ -91,11 +91,17 @@ test('release pipeline stamps all version files before packaging', () => {
       join(scriptsDir, 'release.mjs'),
       '--project', project,
       '--no-updater',
-      '--local',
-      '--repo', join(project, 'missing-upstream'),
-      '--version', 'v0.1.9',
-    ], { encoding: 'utf8' })
+      '--remote-url', join(project, 'missing-upstream'),
+    ], {
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        DSH_DESKTOP_UPSTREAM_REF: 'dsh-v0.1.0-rc.8',
+        DSH_DESKTOP_VERSION: 'v0.1.9',
+      },
+    })
     assert.notEqual(result.status, 0)
+    assert.match(`${result.stdout}\n${result.stderr}`, /无法解析远程引用 dsh-v0\.1\.0-rc\.8/)
     assert.equal(JSON.parse(readFileSync(join(project, 'src-tauri', 'tauri.conf.json'))).version, '0.1.9')
     assert.match(readFileSync(join(project, 'src-tauri', 'Cargo.toml'), 'utf8'), /^version = "0\.1\.9"$/m)
     assert.match(readFileSync(join(project, 'src-tauri', 'Cargo.lock'), 'utf8'), /version = "0\.1\.9"/)
