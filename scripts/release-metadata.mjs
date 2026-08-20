@@ -214,9 +214,21 @@ function releaseIsComplete(release) {
   return requiredReleaseAssets.every((matches) => names.some(matches))
 }
 
+function findUnreleasedSection(changelog) {
+  const heading = /^## \[Unreleased\][^\S\r\n]*(?:\r?\n|$)/m.exec(changelog)
+  if (!heading) return null
+  const bodyStart = heading.index + heading[0].length
+  const nextHeading = /^## \[/m.exec(changelog.slice(bodyStart))
+  const end = nextHeading ? bodyStart + nextHeading.index : changelog.length
+  return {
+    start: heading.index,
+    end,
+    body: changelog.slice(bodyStart, end),
+  }
+}
+
 function extractUnreleased(changelog) {
-  const match = changelog.match(/^## \[Unreleased\]\s*\n([\s\S]*?)(?=^## \[|\s*$)/m)
-  return match?.[1]?.trim() ?? ''
+  return findUnreleasedSection(changelog)?.body.trim() ?? ''
 }
 
 function upstreamChineseNotes(body, repository, tag, headingOffset = 1) {
@@ -452,12 +464,11 @@ export function applyReleaseMetadata(project, metadata) {
     ? readFileSync(changelogPath, 'utf8')
     : '# Changelog\n\nAll notable changes to DSH Desktop are documented in this file.\n\n## [Unreleased]\n'
   if (!new RegExp(`^## \\[${version.replace(/\./g, '\\.')}\\]`, 'm').test(initial)) {
-    const unreleased = extractUnreleased(initial)
+    const section = findUnreleasedSection(initial)
+    if (!section) fail(`cannot find Unreleased section in ${changelogPath}`)
+    const unreleased = section.body.trim()
     const entry = createChangelogEntry(metadata, unreleased)
-    const next = initial.replace(
-      /^## \[Unreleased\]\s*\n[\s\S]*?(?=^## \[|\s*$)/m,
-      `## [Unreleased]\n\n${entry}\n`,
-    )
+    const next = `${initial.slice(0, section.start)}## [Unreleased]\n\n${entry}\n${initial.slice(section.end)}`
     const repository = metadata.desktop.repository
     let linked = next
     if (repository) {

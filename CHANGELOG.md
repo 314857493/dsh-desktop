@@ -12,6 +12,11 @@ DeepSeek Harness 上游版本，以便复现构建和排查兼容性问题。
 
 ### 桌面端
 
+- 修复内置 rc8 启动桌面端时额外打开系统浏览器的问题，同时兼容不支持
+  `--no-open` 参数的旧版自定义运行时。
+- 将 DeepSeek Harness 新版本定时检查从每小时一次调整为每天一次。
+- 在中英文 README 中明确说明本项目为个人维护的非官方项目。
+
 ### 内置 DeepSeek Harness
 
 - 版本：`dsh-v0.1.0-rc.8`
@@ -47,16 +52,15 @@ DeepSeek Harness 上游版本，以便复现构建和排查兼容性问题。
 
 * Python SDK 依赖配置覆盖 4 个内置 Agent 预设，并包含 `rg` / glob 搜索和 MCP stdio 工具所需依赖
 
-
-
-- 修复内置 rc8 启动桌面端时额外打开系统浏览器的问题，同时兼容不支持
-  `--no-open` 参数的旧版自定义运行时。
-- 将 DeepSeek Harness 新版本定时检查从每小时一次调整为每天一次。
-- 在中英文 README 中明确说明本项目为个人维护的非官方项目。
-
 ## [0.1.9] - 2026-08-20
 
 ### 桌面端
+
+- 新增上游 DeepSeek Harness 版本监控、自动构建和发布流程。
+- 自动同步桌面端版本、上游固定状态、GitHub Release Notes 与应用内更新说明。
+- 修复 Windows PowerShell 未传入固定上游引用，以及 standalone pnpm 无法运行 rc8
+  构建脚本的问题。
+- 修复 Windows checkout 使用 CRLF 行尾时无法同步 `Cargo.lock` 版本的问题。
 
 ### 内置 DeepSeek Harness
 
@@ -92,14 +96,6 @@ DeepSeek Harness 上游版本，以便复现构建和排查兼容性问题。
 #### SDK
 
 * Python SDK 依赖配置覆盖 4 个内置 Agent 预设，并包含 `rg` / glob 搜索和 MCP stdio 工具所需依赖
-
-
-
-- 新增上游 DeepSeek Harness 版本监控、自动构建和发布流程。
-- 自动同步桌面端版本、上游固定状态、GitHub Release Notes 与应用内更新说明。
-- 修复 Windows PowerShell 未传入固定上游引用，以及 standalone pnpm 无法运行 rc8
-  构建脚本的问题。
-- 修复 Windows checkout 使用 CRLF 行尾时无法同步 `Cargo.lock` 版本的问题。
 
 ## [0.1.8] - 2026-08-19
 
