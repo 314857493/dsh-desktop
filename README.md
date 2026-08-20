@@ -1,6 +1,6 @@
 # DSH Desktop
 
-> **简体中文** | [English](README.en.md)
+> **简体中文** | [English](README.en.md) | [更新日志](CHANGELOG.md)
 
 基于 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（DSH）的
 桌面端拓展：以 Tauri 原生窗口壳承载 DSH 的 Web GUI，负责拉起 `dsh web` Node 服务器，
