@@ -442,7 +442,7 @@ export function applyReleaseMetadata(project, metadata) {
   )
   replaceRequired(
     join(project, 'src-tauri', 'Cargo.lock'),
-    /(\[\[package\]\]\nname = "dsh-desktop"\nversion = ")[^"]*(")/,
+    /(\[\[package\]\]\r?\nname = "dsh-desktop"\r?\nversion = ")[^"]*(")/,
     `$1${version}$2`,
     'Cargo lock package version',
   )

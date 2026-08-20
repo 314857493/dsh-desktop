@@ -14,6 +14,7 @@ DeepSeek Harness 上游版本，以便复现构建和排查兼容性问题。
 - 自动同步桌面端版本、上游固定状态、GitHub Release Notes 与应用内更新说明。
 - 修复 Windows PowerShell 未传入固定上游引用，以及 standalone pnpm 无法运行 rc8
   构建脚本的问题。
+- 修复 Windows checkout 使用 CRLF 行尾时无法同步 `Cargo.lock` 版本的问题。
 
 ## [0.1.8] - 2026-08-19
 

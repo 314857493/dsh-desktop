@@ -37,7 +37,7 @@ test('applyReleaseMetadata synchronizes versions and promotes Unreleased notes',
     mkdirSync(join(project, 'src-tauri'), { recursive: true })
     writeFileSync(join(project, 'src-tauri', 'tauri.conf.json'), '{\n  "version": "0.1.8"\n}\n')
     writeFileSync(join(project, 'src-tauri', 'Cargo.toml'), '[package]\nname = "dsh-desktop"\nversion = "0.1.8"\n')
-    writeFileSync(join(project, 'src-tauri', 'Cargo.lock'), '[[package]]\nname = "dsh-desktop"\nversion = "0.1.8"\n')
+    writeFileSync(join(project, 'src-tauri', 'Cargo.lock'), '[[package]]\r\nname = "dsh-desktop"\r\nversion = "0.1.8"\r\n')
     writeFileSync(
       join(project, 'CHANGELOG.md'),
       '# Changelog\n\n## [Unreleased]\n\n### 桌面端\n\n- 自动发布。\n\n## [0.1.8]\n\n- 旧版本。\n\n[Unreleased]: https://example.test/compare/v0.1.8...HEAD\n',
@@ -86,7 +86,7 @@ test('release pipeline reads CI metadata from the environment before packaging',
     mkdirSync(join(project, 'src-tauri'), { recursive: true })
     writeFileSync(join(project, 'src-tauri', 'tauri.conf.json'), '{\n  "version": "0.1.8"\n}\n')
     writeFileSync(join(project, 'src-tauri', 'Cargo.toml'), '[package]\nname = "dsh-desktop"\nversion = "0.1.8"\n')
-    writeFileSync(join(project, 'src-tauri', 'Cargo.lock'), '[[package]]\nname = "dsh-desktop"\nversion = "0.1.8"\n')
+    writeFileSync(join(project, 'src-tauri', 'Cargo.lock'), '[[package]]\r\nname = "dsh-desktop"\r\nversion = "0.1.8"\r\n')
     const result = spawnSync(process.execPath, [
       join(scriptsDir, 'release.mjs'),
       '--project', project,
