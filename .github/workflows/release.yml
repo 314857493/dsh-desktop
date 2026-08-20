@@ -104,10 +104,12 @@ jobs:
           node-version: 24
 
       - name: Setup pnpm
-        uses: pnpm/setup@v1
+        uses: pnpm/action-setup@v4
         with:
           version: 11.7.0
-          install: false
+          # rc.8's build script executes npm_execpath through Node. Use the
+          # regular JavaScript pnpm package instead of standalone @pnpm/exe.
+          standalone: false
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -137,10 +139,12 @@ jobs:
         run: npm install -g @tauri-apps/cli
 
       - name: Run release pipeline (fetch pinned DSH source -> build -> package)
-        run: node scripts/release.mjs --ref "$UPSTREAM_REF" --version "$DESKTOP_VERSION"
+        # release.mjs reads these values directly from the environment so the
+        # invocation is identical under Bash and PowerShell.
+        run: node scripts/release.mjs
         env:
-          UPSTREAM_REF: ${{ needs.prepare.outputs.upstream_ref }}
-          DESKTOP_VERSION: ${{ needs.prepare.outputs.desktop_version }}
+          DSH_DESKTOP_UPSTREAM_REF: ${{ needs.prepare.outputs.upstream_ref }}
+          DSH_DESKTOP_VERSION: ${{ needs.prepare.outputs.desktop_version }}
           CI: 'true'
           # Optional production macOS signing/notarization secrets. Tauri
           # ignores these on other platforms. release.mjs falls back to a
