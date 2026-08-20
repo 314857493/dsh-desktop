@@ -1,6 +1,17 @@
 # Changelog
 
-本仓库的显著变更。格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)。
+DSH Desktop 的重要变更记录在此文件中。版本号属于桌面端；每个版本同时记录其内置的
+DeepSeek Harness 上游版本，以便复现构建和排查兼容性问题。
+
+格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循
+[Semantic Versioning](https://semver.org/lang/zh-CN/)。
+
+## [Unreleased]
+
+### 桌面端
+
+- 新增上游 DeepSeek Harness 版本监控、自动构建和发布流程。
+- 自动同步桌面端版本、上游固定状态、GitHub Release Notes 与应用内更新说明。
 
 ## [0.1.8] - 2026-08-19
 
@@ -84,3 +95,6 @@
   依赖补齐/裁剪/孤儿扫描 → 冒烟测试 → 打包；依赖裁剪自动扫描、随上游更新重扫。
 - GitHub Actions：CI 校验（语法/空白/机器路径）+ Release 发布。
 - 双语 README（中/英）。
+
+[Unreleased]: https://github.com/314857493/dsh-desktop/compare/v0.1.8...HEAD
+[0.1.8]: https://github.com/314857493/dsh-desktop/releases/tag/v0.1.8

@@ -25,6 +25,10 @@ serve-err.log
 repo-cache/
 backup-pre-prune/
 
+# Generated release metadata / notes
+.release/
+release-metadata/
+
 # Misc
 icon-preview*.png
 

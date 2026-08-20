@@ -44,7 +44,7 @@ This project does **not modify the DSH core** — the agent loop, tool calling, 
 ## Quick Start
 
 - **Installed**: double-click "DSH Desktop" on the desktop/Start Menu.
-- **Installer**: `src-tauri/target/release/bundle/nsis/DSH Desktop_0.1.0_x64-setup.exe`
+- **Installer**: `src-tauri/target/release/bundle/nsis/DSH Desktop_*_x64-setup.exe`
 - **Portable**: `src-tauri/target/release/dsh-desktop.exe`, copy it together with the adjacent `dsh/` and `node/` directories (the bundled runtimes).
 
 ## Distribution Forms
@@ -95,7 +95,7 @@ CLI args: `dsh-desktop.exe --dsh-root <path> [--node <path>] [--home <path>]`
 node scripts/release.mjs
 
 # Pin a remote ref (tag / branch / commit)
-node scripts/release.mjs --ref v0.1.0
+node scripts/release.mjs --ref dsh-v0.1.0-rc.8
 
 # Use a local clone (offline): skips install/build if already built (fastest path)
 node scripts/release.mjs --local
@@ -107,7 +107,7 @@ node scripts/release.mjs --remote-url <url>
 node scripts/release.mjs --install
 node scripts/release.mjs --skip-boot-test
 node scripts/release.mjs --no-updater       # test installer on a dev machine; no updater key required
-node scripts/release.mjs --version 0.1.4   # artifact version (syncs tauri.conf.json + Cargo.toml; a leading `v` is stripped)
+node scripts/release.mjs --version 0.1.9   # artifact version (syncs Tauri + Cargo metadata; a leading `v` is stripped)
 ```
 
 > **Development packaging**: `--no-updater` still prepares the runtime, runs the
@@ -152,8 +152,21 @@ Remote source is cached in `repo-cache/deepseek-harness/` (shallow clone; subseq
 
 ### GitHub Actions, in-app updates, and macOS signing
 
-The release workflow builds and publishes Windows, macOS, and Linux bundles, signed
-updater artifacts, and a static `latest.json` manifest. The installed app checks
+At minute 17 of every hour, the release workflow checks upstream releases and processes
+the next unseen `dsh-v*` version. It pins the exact tag and commit, then builds Windows,
+macOS, and Linux bundles. Only after every platform succeeds does it update the checked-in
+versions, `CHANGELOG.md`, and `.dsh-upstream.json`, then publish signed updater artifacts,
+a `latest.json` manifest containing real update notes, and the GitHub Release. Runs are
+serialized, and an interrupted release with missing assets is retried with the same
+version. Pushing a `v*` tag and manual Actions builds remain supported. The checked-in
+`dsh-v0.1.0-rc.8` state is an automation baseline, so enabling the schedule does not
+republish the current upstream version.
+
+Automatic publishing requires read/write Workflow permissions under Settings → Actions →
+General. If `main` is protected, allow `github-actions[bot]` to write the release-metadata
+commit; otherwise the workflow stops after the platform builds.
+
+The installed app checks
 GitHub Releases in the background on each launch. The **Check for updates** button
 in the Settings dialog can also trigger a manual check at any time. Results use a
 non-blocking in-app status card and distinguish current, unpublished, offline, service-error,
@@ -201,7 +214,7 @@ signed release is the preferred long-term fix.
 
 ### Artifacts
 
-- Installer: `src-tauri/target/release/bundle/nsis/DSH Desktop_0.1.0_x64-setup.exe` (~57 MB)
+- Installer: `src-tauri/target/release/bundle/nsis/DSH Desktop_*_x64-setup.exe` (~57 MB)
 - Portable: `src-tauri/target/release/dsh-desktop.exe` + `dsh/` + `node/` directories
 
 ## How It Works
@@ -228,6 +241,7 @@ dsh-desktop/
 ├── dist/                 # splash page (loading page shown before the server is ready)
 ├── scripts/
 │   ├── release.mjs            # one-command release (remote/local, 12 steps)
+│   ├── release-metadata.mjs   # upstream detection, version bump, changelog / release notes
 │   ├── patch-runtime.mjs      # restores runtime-needed deps pruned by deploy
 │   ├── trim-runtime.mjs       # strips maps/types/sources
 │   ├── prune-rt.mjs           # auto orphan-dep pruning (closure + reference scan)
@@ -238,6 +252,8 @@ dsh-desktop/
 │   ├── test-open-document.mjs # e2e check of the open-config-file path (TEST_NODE/TEST_BIN point at a runtime)
 │   └── analyze-session-log.mjs # session-log structure analysis
 ├── launch-dsh-desktop.cmd # portable launcher
+├── .dsh-upstream.json     # last processed upstream tag/commit and desktop version
+├── CHANGELOG.md           # desktop and bundled-DSH release history
 └── README.md
 ```
 

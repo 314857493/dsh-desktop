@@ -50,7 +50,7 @@ DSH，本仓库提供的是桌面封装、自包含打包与自动化发布（�
 ## 快速开始
 
 - **已安装**：双击桌面/开始菜单的「DSH Desktop」即可。
-- **安装包**：`src-tauri/target/release/bundle/nsis/DSH Desktop_0.1.0_x64-setup.exe`
+- **安装包**：`src-tauri/target/release/bundle/nsis/DSH Desktop_*_x64-setup.exe`
 - **绿色版**：`src-tauri/target/release/dsh-desktop.exe`，需连同旁边的 `dsh/`、`node/`
   目录一起拷贝（这俩是内置运行时）。
 
@@ -112,7 +112,7 @@ DSH，本仓库提供的是桌面封装、自包含打包与自动化发布（�
 node scripts/release.mjs
 
 # 指定远程引用（tag / 分支 / commit）
-node scripts/release.mjs --ref v0.1.0
+node scripts/release.mjs --ref dsh-v0.1.0-rc.8
 
 # 用本地 clone（不联网）：已构建则跳过 install/build，直接打包（最快路径）
 node scripts/release.mjs --local
@@ -124,7 +124,7 @@ node scripts/release.mjs --remote-url <url>
 node scripts/release.mjs --install
 node scripts/release.mjs --skip-boot-test
 node scripts/release.mjs --no-updater       # 开发机测试安装包；不需要 updater 私钥
-node scripts/release.mjs --version 0.1.4   # 产物版本号（同步 tauri.conf.json + Cargo.toml，v 前缀自动去掉）
+node scripts/release.mjs --version 0.1.9   # 产物版本号（同步 Tauri + Cargo 元数据，v 前缀自动去掉）
 ```
 
 > **开发机测试打包**：`--no-updater` 仍会执行运行时准备、冒烟测试和平台安装包构建，
@@ -173,8 +173,19 @@ node scripts/release.mjs --version 0.1.4   # 产物版本号（同步 tauri.conf
 仓库内置两个工作流：
 
 - **CI**（`.github/workflows/ci.yml`）：push/PR 时校验脚本语法、空白、无机器路径。
-- **Release**（`.github/workflows/release.yml`）：打 `v*` tag 或手动触发 → Windows、
-  macOS、Linux 构建 → 上传安装包、签名更新包和 `latest.json` → 创建 GitHub Release。
+- **Release**（`.github/workflows/release.yml`）：每小时第 17 分钟检查上游 Release；发现
+  新的 `dsh-v*` 版本后固定 tag/commit，依次发布每个尚未处理的版本。Windows、macOS、
+  Linux 全部构建成功后，才更新版本文件、`CHANGELOG.md`、`.dsh-upstream.json`，并上传
+  安装包、签名更新包、带真实更新说明的 `latest.json` 和 GitHub Release。
+
+定时发布通过 `concurrency` 串行执行；如果 changelog 提交成功后附件上传中断，下次检查会
+识别不完整 Release 并用同一版本重试。手动推送 `v*` tag 和 Actions 页面手动构建仍然可用。
+`.dsh-upstream.json` 以 `dsh-v0.1.0-rc.8` 作为自动化基线，因此启用工作流不会重复发布
+当前上游版本。
+
+自动发版需要仓库 Settings → Actions → General 中的 Workflow permissions 允许读写内容；
+如果 `main` 有分支保护，还需允许 `github-actions[bot]` 写入发布元数据提交，否则构建完成后
+会停在 changelog/version 提交步骤。
 
 ### 应用内更新
 
@@ -231,7 +242,7 @@ open "/Applications/DSH Desktop.app"
 
 ### 产物
 
-- 安装包：`src-tauri/target/release/bundle/nsis/DSH Desktop_0.1.0_x64-setup.exe`（约 57 MB）
+- 安装包：`src-tauri/target/release/bundle/nsis/DSH Desktop_*_x64-setup.exe`（约 57 MB）
 - 绿色版：`src-tauri/target/release/dsh-desktop.exe` + `dsh/` + `node/` 目录
 
 ## 工作原理
@@ -267,7 +278,8 @@ dsh-desktop/
 │   └── icons/            # 图标资源（由官方 SVG 生成）
 ├── dist/                 # 启动页（loading 页，服务器就绪前展示）
 ├── scripts/
-│   ├── release.mjs            # 一键发布（远程/本地，10 步）
+│   ├── release.mjs            # 一键发布（远程/本地，12 步）
+│   ├── release-metadata.mjs   # 上游检测、版本递增、changelog / Release Notes
 │   ├── patch-runtime.mjs      # 补齐 deploy 剪掉的运行时依赖
 │   ├── trim-runtime.mjs       # 裁剪 map/类型/源码
 │   ├── prune-rt.mjs           # 孤儿依赖自动裁剪（闭包 + 引用扫描）
@@ -278,6 +290,8 @@ dsh-desktop/
 │   ├── test-open-document.mjs # 端到端验证「打开配置文件」（TEST_NODE/TEST_BIN 指定运行时）
 │   └── analyze-session-log.mjs # 会话日志结构分析
 ├── launch-dsh-desktop.cmd # 绿色版启动器
+├── .dsh-upstream.json     # 已处理的上游 tag/commit 与桌面版本
+├── CHANGELOG.md           # 桌面端与内置 DSH 的版本记录
 └── README.md
 ```
 
