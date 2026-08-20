@@ -119,10 +119,12 @@ DSH，本仓库提供的是桌面封装、自包含打包与自动化发布（�
 浏览社区目录、搜索并一键安装插件，也可以在已安装列表中更新、停用或卸载。商城和安装操作
 都在本机 DSH 进程内完成；桌面端附带固定版本的私有 pnpm，不依赖系统 Node、npm 或 pnpm。
 
-首次启动时，桌面端只把商城加入当前 `web` profile 一次，并在 profile 内记录迁移标记。
-用户之后主动卸载商城，后续启动不会强制装回；删除整个 profile 后重新初始化，则会恢复桌面端
+首次启动时，桌面端把安装包中的商城离线种子复制到当前 `web` profile，并登记精确版本和
+迁移标记。此后商城由 profile 管理，可以正常自更新或卸载，也不会被安装目录中的旧版本遮蔽。
+用户主动卸载商城后，后续启动不会强制装回；删除整个 profile 后重新初始化，则会恢复桌面端
 默认预装项。用户安装的插件、配置和商城状态都位于 `DSH_HOME`（默认
-`~/.dsh-desktop`），应用升级不会覆盖。
+`~/.dsh-desktop`），应用升级不会覆盖。桌面端负责 DSH 子进程生命周期，因此商城内的重启
+入口默认禁用；用户设置可以覆盖该默认值，关闭并重新打开桌面应用仍是完整重启方式。
 
 > 商城收录不代表本项目或 DeepSeek 对第三方插件背书。插件与本地代码拥有相同进程权限，
 > 安装前请核对来源、仓库和权限提示；需要构建脚本的包默认不会被 pnpm 自动放行。
@@ -179,9 +181,9 @@ node scripts/release.mjs --version 0.1.9   # 产物版本号（同步 Tauri + Ca
 3. `pnpm deploy` 从 DSH 仓库生成自包含运行时 `rt/`
 4. `patch-runtime` 补齐 pnpm deploy 剪掉的运行时依赖
 5. `ensure node-runtime` 从系统 Node 复制核心运行时
-6. `bundle-marketplace` 解析并预置构建时的 `dshmarket@latest`（实际版本写入运行时
-   manifest），同时固定预置私有 `pnpm@11.22.0`
-7. 放入 `ensure-fallback.mjs` 与一次性商城 profile 迁移脚本
+6. `bundle-marketplace` 解析并预置构建时的 `dshmarket@latest` 离线种子（实际版本写入
+   种子 manifest），同时固定预置私有 `pnpm@11.22.0`
+7. 放入 `ensure-fallback.mjs` 与商城 profile 安装/迁移脚本
 8. `trim-runtime` 裁剪 map/类型/源码
 9. `prune-rt` **自动扫描**：依赖闭包 + 运行时代码引用扫描，删除确无引用的孤儿包
    （旧安装包自动备份到 `backup-pre-prune/`；被引用/未声明的运行时依赖如 tsx 自动保留）
@@ -274,8 +276,8 @@ open "/Applications/DSH Desktop.app"
 1. Rust 壳解析配置（内置 `dsh/` + `node/` 优先），找到 node 与 `lib/bin.js`。
 2. 若使用内置运行时，先跑 `ensure-fallback.mjs`：把运行时内所有 `@deepseek-ai`
    包链接进 `$DSH_HOME/profiles/node_modules`，让 Cordis loader 能从配置文件目录
-   解析到包；再跑一次性商城迁移，将预装 `dshmarket` 追加到 `web` profile，同时尊重
-   用户后续卸载选择。
+   解析到包；再把商城离线种子安装成 `web` profile 自己的依赖，并写入默认禁用内部重启的
+   profile 策略，同时尊重用户设置、已有更新版本和后续卸载选择。
 3. 以 `web --host 127.0.0.1 --port 0` 启动服务器（端口由 OS 分配，避免冲突），
    并把内置 node 目录加到子进程 PATH；子进程 `CREATE_NO_WINDOW` 静默运行。
 4. 读取子进程 stdout，捕获 `dsh web: http://127.0.0.1:<port>` 就绪行后，
@@ -306,11 +308,11 @@ dsh-desktop/
 │   ├── release.mjs            # 一键发布（远程/本地，13 步）
 │   ├── release-metadata.mjs   # 上游检测、版本递增、changelog / Release Notes
 │   ├── patch-runtime.mjs      # 补齐 deploy 剪掉的运行时依赖
-│   ├── bundle-marketplace.mjs # 打包最新版社区商城 + 固定版私有 pnpm
+│   ├── bundle-marketplace.mjs # 打包最新版社区商城种子 + 固定版私有 pnpm
 │   ├── trim-runtime.mjs       # 裁剪 map/类型/源码
 │   ├── prune-rt.mjs           # 孤儿依赖自动裁剪（闭包 + 引用扫描）
 │   ├── ensure-fallback.mjs    # 启动时链接内置包到 DSH_HOME
-│   ├── ensure-marketplace.mjs # 首次启动挂载商城，保留用户卸载选择
+│   ├── ensure-marketplace.mjs # 安装/迁移 profile 商城，保留更新和卸载选择
 │   ├── boot-test.mjs          # 运行时冒烟测试
 │   ├── gen-app-icon-svg.mjs   # 从官方 SVG 生成图标（含 glyph-path.txt）
 │   ├── repair-session-log.mjs # 会话日志修复（双实例写坏时重建连续 seq）

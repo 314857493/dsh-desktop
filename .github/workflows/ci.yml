@@ -25,8 +25,8 @@ jobs:
             node --check "$f"
           done
 
-      - name: Test release metadata
-        run: node --test scripts/release-metadata.test.mjs
+      - name: Test release scripts
+        run: node --test scripts/*.test.mjs
 
       - name: Whitespace check
         run: git diff --check

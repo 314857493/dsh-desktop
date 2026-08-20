@@ -18,7 +18,7 @@ const bundledMarketplaceMigration = join(runtime, 'scripts', 'ensure-marketplace
 const sourceMarketplaceMigration = join(here, 'ensure-marketplace.mjs')
 const marketplaceMigration = existsSync(bundledMarketplaceMigration)
   ? bundledMarketplaceMigration
-  : existsSync(join(runtime, 'node_modules', 'dshmarket', 'package.json'))
+  : existsSync(join(runtime, 'marketplace-seed', 'node_modules', 'dshmarket', 'package.json'))
     ? sourceMarketplaceMigration
     : bundledMarketplaceMigration
 if (existsSync(marketplaceMigration)) {
@@ -63,12 +63,20 @@ async function finishReady(line) {
   if (existsSync(marketplaceMigration)) {
     const url = line.slice(line.indexOf('http')).trim()
     try {
-      const response = await fetch(`${url}/dsh-market/status`)
+      const response = await fetch(`${url}/dsh-market/status`, {
+        signal: AbortSignal.timeout(Math.min(timeoutMs, 10000)),
+      })
       const status = await response.json()
-      if (!response.ok || status.version === undefined || status.pnpm !== true) {
+      if (
+        !response.ok ||
+        status.version === undefined ||
+        status.pnpm !== true ||
+        status.restart !== false ||
+        !Object.prototype.hasOwnProperty.call(status.installed ?? {}, 'dshmarket')
+      ) {
         throw new Error(`unexpected status ${response.status}: ${JSON.stringify(status).slice(0, 500)}`)
       }
-      console.log(`[MARKETPLACE] dshmarket@${status.version}; private pnpm ready`)
+      console.log(`[MARKETPLACE] dshmarket@${status.version}; profile-managed; private pnpm ready`)
     } catch (error) {
       console.error(`[MARKETPLACE ERROR] ${error instanceof Error ? error.message : String(error)}`)
       child.kill('SIGTERM')

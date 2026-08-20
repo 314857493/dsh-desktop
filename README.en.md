@@ -103,10 +103,14 @@ to browse and search the community catalog, install plugins with confirmation, a
 disablement, or removal. All operations run in the local DSH process. The desktop bundle carries a
 pinned private pnpm, so no system Node, npm, or pnpm setup is required.
 
-On first launch, Desktop adds the market to the current `web` profile once and records a marker in
-that profile. If the user later uninstalls it, subsequent launches do not force it back. Resetting the
-entire profile also removes the marker and restores the desktop defaults. User-installed plugins,
+On first launch, Desktop copies the bundled offline market seed into the current `web` profile,
+records its exact version as a profile dependency, and writes a migration marker. The profile owns the
+active package from then on, so market self-updates and removals work and are not shadowed by an older
+installation copy. If the user later uninstalls it, subsequent launches do not force it back. Resetting
+the entire profile also removes the marker and restores the desktop defaults. User-installed plugins,
 configuration, and market state remain under `DSH_HOME` (normally `~/.dsh-desktop`) across app updates.
+Desktop owns the DSH child-process lifecycle, so the market's internal restart action defaults to
+disabled. An explicit user setting may override that default; close and reopen Desktop for a full restart.
 
 > A market listing is not an endorsement by this project or DeepSeek. Plugins execute with local-code
 > privileges: verify the source, repository, and permission/build-script prompts before installing.
@@ -163,9 +167,9 @@ Remote source is cached in `repo-cache/deepseek-harness/` (shallow clone; subseq
 3. `pnpm deploy` generates the self-contained runtime `rt/` from the DSH repo
 4. `patch-runtime` restores runtime-needed deps that pnpm deploy pruned
 5. `ensure node-runtime` copies the core Node runtime
-6. `bundle-marketplace` resolves and bundles the build-time `dshmarket@latest`
-   (recording the exact version in the runtime manifest) and pins private `pnpm@11.22.0`
-7. installs the fallback and one-time market profile migration scripts
+6. `bundle-marketplace` resolves and bundles an offline build-time `dshmarket@latest` seed
+   (recording the exact version in the seed manifest) and pins private `pnpm@11.22.0`
+7. installs the fallback and market profile install/migration scripts
 8. `trim-runtime` strips maps/types/sources
 9. `prune-rt` **auto-scans**: dependency closure + reference scan over runtime code, removing orphan packages with no references
    (the previous installer is auto-backed up to `backup-pre-prune/`; referenced/undeclared runtime deps such as tsx are kept automatically)
@@ -245,7 +249,7 @@ signed release is the preferred long-term fix.
 ## How It Works
 
 1. The Rust shell resolves configuration (bundled `dsh/` + `node/` take precedence) and locates node and `lib/bin.js`.
-2. With the bundled runtime, it runs `ensure-fallback.mjs` to make shipped packages resolvable from the profile directory, then a one-time market migration that adds the preinstalled `dshmarket` bundle while preserving any later user uninstall.
+2. With the bundled runtime, it runs `ensure-fallback.mjs` to make shipped packages resolvable from the profile directory, then installs the offline market seed as a profile-owned dependency and applies a profile default that disables in-market restart, while preserving user settings, existing updates, and any later user uninstall.
 3. It starts the server with `web --host 127.0.0.1 --port 0` (OS-assigned port, avoiding conflicts) and prepends the bundled node dir to the child's PATH; children run silently with `CREATE_NO_WINDOW`.
 4. It watches the child's stdout for the readiness line `dsh web: http://127.0.0.1:<port>` and navigates the WebView there.
 5. On exit it kills the process tree with `taskkill /T /F`; the child is also in a Windows Job Object with kill-on-close — the server is cleaned up no matter how the app exits (close/crash/force-kill).
@@ -268,11 +272,11 @@ dsh-desktop/
 │   ├── release.mjs            # one-command release (remote/local, 13 steps)
 │   ├── release-metadata.mjs   # upstream detection, version bump, changelog / release notes
 │   ├── patch-runtime.mjs      # restores runtime-needed deps pruned by deploy
-│   ├── bundle-marketplace.mjs # bundles latest community market + pinned private pnpm
+│   ├── bundle-marketplace.mjs # bundles latest community market seed + pinned private pnpm
 │   ├── trim-runtime.mjs       # strips maps/types/sources
 │   ├── prune-rt.mjs           # auto orphan-dep pruning (closure + reference scan)
 │   ├── ensure-fallback.mjs    # links bundled packages into DSH_HOME at launch
-│   ├── ensure-marketplace.mjs # one-time market mount that respects later uninstall
+│   ├── ensure-marketplace.mjs # installs/migrates profile market; preserves updates/uninstall
 │   ├── boot-test.mjs          # runtime + marketplace smoke test
 │   ├── gen-app-icon-svg.mjs   # generates icons from the official SVG (uses glyph-path.txt)
 │   ├── repair-session-log.mjs # session-log repair (rebuilds contiguous seq after dual-writer corruption)

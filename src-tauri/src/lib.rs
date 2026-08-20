@@ -6,8 +6,8 @@
 //!      < env vars < CLI args): DSH runtime root, node.exe, DSH_HOME.
 //!   2. If the resolved root is the bundled runtime, run its preparation
 //!      scripts: `ensure-fallback.mjs` makes shipped packages resolvable from
-//!      profiles, and `ensure-marketplace.mjs` mounts the preinstalled plugin
-//!      market once without overriding a later user uninstall.
+//!      profiles, and `ensure-marketplace.mjs` installs the offline market seed
+//!      as a profile-owned plugin without overriding updates or later removal.
 //!   3. Spawn `node <root>/lib/bin.js web --host 127.0.0.1 --port 0`, adding
 //!      `--no-open` when supported, with the resolved environment (bundled node
 //!      dir prepended to PATH).
@@ -715,9 +715,9 @@ fn run_ensure_fallback(node: &Path, root: &Path, dsh_home: Option<&str>) -> Resu
     Ok(())
 }
 
-/// Activate the marketplace shipped by DSH Desktop for this profile. The
-/// migration owns a marker inside the profile, so it runs once and never
-/// silently reverses a later user uninstall. Marketplace failure is optional:
+/// Install or migrate the marketplace shipped by DSH Desktop into this
+/// profile. The marker records profile ownership and never silently reverses
+/// a later user uninstall. Marketplace failure is optional:
 /// the caller logs it and continues to boot the core DSH experience.
 fn run_ensure_marketplace(node: &Path, root: &Path, dsh_home: &str) -> Result<(), String> {
     let script = root.join("scripts").join("ensure-marketplace.mjs");
@@ -731,13 +731,28 @@ fn run_ensure_marketplace(node: &Path, root: &Path, dsh_home: &str) -> Result<()
         .env("DSH_HOME", dsh_home)
         .stdin(Stdio::null());
     hide_console(&mut command);
-    let status = command
-        .status()
+    let output = command
+        .output()
         .map_err(|err| format!("无法准备插件商城: {err}"))?;
-    if !status.success() {
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    for line in stdout.lines().chain(stderr.lines()) {
+        let line = line.trim();
+        if !line.is_empty() {
+            log(&format!("[marketplace] {line}"));
+        }
+    }
+    if !output.status.success() {
+        let detail = stderr
+            .lines()
+            .chain(stdout.lines())
+            .map(str::trim)
+            .find(|line| !line.is_empty())
+            .map(|line| format!(": {line}"))
+            .unwrap_or_default();
         return Err(format!(
-            "插件商城准备脚本退出码 {}",
-            status.code().unwrap_or(-1)
+            "插件商城准备脚本退出码 {}{detail}",
+            output.status.code().unwrap_or(-1)
         ));
     }
     Ok(())

@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /**
- * Add the community plugin market and a private pnpm CLI to a deployed DSH
- * Desktop runtime.
+ * Add a community plugin market seed and a private pnpm CLI to a deployed DSH
+ * Desktop runtime. The seed is copied into the user's web profile on first
+ * launch, where DSH can update or uninstall it like any other plugin.
  *
  * The release pipeline intentionally does this after `pnpm deploy`: changing
  * the upstream checkout would dirty a caller-owned `--local` repository, and
@@ -32,6 +33,7 @@ import { fileURLToPath } from 'node:url'
 
 export const MARKETPLACE_PACKAGE = 'dshmarket'
 export const MARKETPLACE_SPEC = 'latest'
+export const MARKETPLACE_SEED_DIR = 'marketplace-seed'
 export const PNPM_VERSION = '11.22.0'
 
 function fail(message) {
@@ -109,9 +111,27 @@ function installStage(stage) {
   if (result.status !== 0) fail(`staging install failed (exit ${result.status ?? 1})`)
 }
 
+function removeLegacyInstalledMarketplace(runtimeDir) {
+  rmSync(join(runtimeDir, 'node_modules', MARKETPLACE_PACKAGE), {
+    recursive: true,
+    force: true,
+  })
+
+  const runtimeManifestPath = join(runtimeDir, 'package.json')
+  const runtimeManifest = readJson(runtimeManifestPath)
+  if (runtimeManifest.dependencies?.[MARKETPLACE_PACKAGE] !== undefined) {
+    delete runtimeManifest.dependencies[MARKETPLACE_PACKAGE]
+    writeFileSync(runtimeManifestPath, `${JSON.stringify(runtimeManifest, null, 2)}\n`)
+  }
+}
+
 function installMarketplace(stageModules, runtimeDir) {
-  const runtimeModules = join(runtimeDir, 'node_modules')
-  const marketDir = copyPackage(stageModules, runtimeModules, MARKETPLACE_PACKAGE)
+  removeLegacyInstalledMarketplace(runtimeDir)
+
+  const seedDir = join(runtimeDir, MARKETPLACE_SEED_DIR)
+  rmSync(seedDir, { recursive: true, force: true })
+  const seedModules = join(seedDir, 'node_modules')
+  const marketDir = copyPackage(stageModules, seedModules, MARKETPLACE_PACKAGE)
   const manifest = readJson(join(marketDir, 'package.json'))
   const resolvedVersion = manifest.version
   if (typeof resolvedVersion !== 'string' || resolvedVersion.trim() === '') {
@@ -126,17 +146,12 @@ function installMarketplace(stageModules, runtimeDir) {
     }),
   )
 
-  // Make the market part of prune-rt's declared closure. Its own dependencies
-  // stay nested in the copied package and are preserved with that directory.
-  const runtimeManifestPath = join(runtimeDir, 'package.json')
-  const runtimeManifest = readJson(runtimeManifestPath)
-  runtimeManifest.dependencies = {
-    ...(runtimeManifest.dependencies ?? {}),
-    // Preserve the exact registry result in the published artifact even
-    // though release builds always resolve the moving `latest` tag.
-    [MARKETPLACE_PACKAGE]: resolvedVersion,
-  }
-  writeFileSync(runtimeManifestPath, `${JSON.stringify(runtimeManifest, null, 2)}\n`)
+  writeFileSync(join(seedDir, 'manifest.json'), `${JSON.stringify({
+    schemaVersion: 1,
+    package: MARKETPLACE_PACKAGE,
+    requested: MARKETPLACE_SPEC,
+    version: resolvedVersion,
+  }, null, 2)}\n`)
   return { marketDir, nested, resolvedVersion }
 }
 

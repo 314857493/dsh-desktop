@@ -1,20 +1,21 @@
 #!/usr/bin/env node
 /**
- * First-run migration for the marketplace bundled by DSH Desktop.
+ * Install the marketplace seed into DSH Desktop's web profile.
  *
- * The marker lives inside the web profile. Once it exists, a missing market
- * bundle is treated as the user's uninstall choice and is never added back.
- * Deleting/resetting the whole profile also deletes the marker, so a newly
- * initialized profile receives the desktop defaults again.
+ * The runtime copy is only an offline seed. The active package belongs to the
+ * profile, so DSH and dshmarket can update or uninstall it normally. A schema
+ * marker prevents a later desktop launch from undoing an explicit uninstall.
  *
  * Usage: node ensure-marketplace.mjs <runtimeDir>
  * DSH_HOME selects the profile root.
  */
 import {
+  cpSync,
   existsSync,
   mkdirSync,
   readFileSync,
   renameSync,
+  rmSync,
   writeFileSync,
 } from 'node:fs'
 import { homedir } from 'node:os'
@@ -23,10 +24,25 @@ import { pathToFileURL } from 'node:url'
 
 export const MARKETPLACE_PACKAGE = 'dshmarket'
 export const MARKETPLACE_MARKER = '.dsh-desktop-marketplace.json'
+export const MARKETPLACE_SCHEMA_VERSION = 2
+export const MARKETPLACE_SEED_DIR = 'marketplace-seed'
+export const MARKETPLACE_SEED_OWNERSHIP = '.dsh-desktop-seed.json'
+
+const MANAGED_POLICY_START = '# >>> DSH Desktop managed marketplace policy'
+const MANAGED_POLICY_END = '# <<< DSH Desktop managed marketplace policy'
+const MANAGED_POLICY = `${MANAGED_POLICY_START}
+- id: dsh-market
+  config:
+    allowRestart: false
+${MANAGED_POLICY_END}`
 
 function runtimeHome() {
   const configured = (process.env.DSH_HOME ?? '').trim()
   return configured === '' ? join(homedir(), '.dsh') : configured
+}
+
+function readJson(path) {
+  return JSON.parse(readFileSync(path, 'utf8'))
 }
 
 function writeJsonAtomic(path, value) {
@@ -36,12 +52,231 @@ function writeJsonAtomic(path, value) {
   renameSync(temporary, path)
 }
 
-export async function ensureMarketplace(runtimeDir, dshHome = runtimeHome()) {
-  const marketManifestPath = join(runtimeDir, 'node_modules', MARKETPLACE_PACKAGE, 'package.json')
-  if (!existsSync(marketManifestPath)) {
-    throw new Error(`bundled ${MARKETPLACE_PACKAGE} package is missing`)
+function readMarker(path) {
+  if (!existsSync(path)) return undefined
+  try {
+    const marker = readJson(path)
+    if (typeof marker === 'object' && marker !== null) return marker
+  } catch {
+    // A marker is bookkeeping, not a reason to make the whole profile
+    // unbootable. Still treat its presence as "previously handled" so a
+    // damaged marker cannot silently reverse an explicit uninstall.
   }
-  const marketManifest = JSON.parse(readFileSync(marketManifestPath, 'utf8'))
+  console.warn(`ensure-marketplace: ignoring invalid marker ${path}`)
+  return { schemaVersion: MARKETPLACE_SCHEMA_VERSION }
+}
+
+function parseVersion(value) {
+  const match = /^(?:v)?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/.exec(value)
+  if (match === null) return undefined
+  return {
+    major: Number(match[1]),
+    minor: Number(match[2]),
+    patch: Number(match[3]),
+    prerelease: match[4],
+  }
+}
+
+function compareVersions(left, right) {
+  for (const key of ['major', 'minor', 'patch']) {
+    if (left[key] !== right[key]) return left[key] < right[key] ? -1 : 1
+  }
+  if (left.prerelease === right.prerelease) return 0
+  if (left.prerelease === undefined) return 1
+  if (right.prerelease === undefined) return -1
+  return left.prerelease.localeCompare(right.prerelease)
+}
+
+// Return true/false only for the common exact, caret, and tilde registry
+// specs we can judge without consulting the network. Unknown specs remain
+// undefined; they must never authorize replacing a user-selected package.
+function simpleSpecAllowsVersion(spec, version) {
+  if (typeof spec !== 'string') return undefined
+  let candidate = spec.trim()
+  const aliasPrefix = `npm:${MARKETPLACE_PACKAGE}@`
+  if (candidate.startsWith(aliasPrefix)) candidate = candidate.slice(aliasPrefix.length)
+  const match = /^(?<operator>[~^]?)(?<version>v?(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?)$/.exec(candidate)
+  const installed = parseVersion(version)
+  const lower = match?.groups?.version === undefined
+    ? undefined
+    : parseVersion(match.groups.version)
+  if (installed === undefined || lower === undefined) return undefined
+
+  const comparison = compareVersions(installed, lower)
+  if (match.groups.operator === '') return comparison === 0
+  if (comparison < 0) return false
+  if (match.groups.operator === '~') {
+    return installed.major === lower.major && installed.minor === lower.minor
+  }
+  if (lower.major > 0) return installed.major === lower.major
+  if (lower.minor > 0) {
+    return installed.major === 0 && installed.minor === lower.minor
+  }
+  return installed.major === 0 && installed.minor === 0 && installed.patch === lower.patch
+}
+
+function seedMatchesSpec(seed, spec) {
+  const simple = simpleSpecAllowsVersion(spec, seed.version)
+  if (simple !== undefined) return simple
+  if (typeof spec !== 'string') return false
+  const candidate = spec.trim()
+  return candidate === '*' || candidate === seed.requested
+}
+
+function isOwnedSeedPackage(profileDir, installedPackage, seedVersion) {
+  if (installedPackage === undefined) return false
+  const ownershipPath = join(
+    profileDir,
+    'node_modules',
+    MARKETPLACE_PACKAGE,
+    MARKETPLACE_SEED_OWNERSHIP,
+  )
+  if (!existsSync(ownershipPath)) return false
+  try {
+    const ownership = readJson(ownershipPath)
+    return ownership?.schemaVersion === 1 &&
+      ownership?.package === MARKETPLACE_PACKAGE &&
+      ownership?.version === seedVersion &&
+      installedPackage.version === seedVersion
+  } catch {
+    return false
+  }
+}
+
+function isUsableBundlePackage(packageDir, manifest) {
+  const patch = manifest?.dsh?.bundle?.patch
+  return manifest?.name === MARKETPLACE_PACKAGE &&
+    typeof manifest?.version === 'string' &&
+    manifest.version !== '' &&
+    typeof patch === 'string' &&
+    patch !== '' &&
+    existsSync(join(packageDir, patch))
+}
+
+function copySeedPackage(seedPackageDir, profileDir, seedVersion) {
+  const profileModules = join(profileDir, 'node_modules')
+  const target = join(profileModules, MARKETPLACE_PACKAGE)
+  const temporary = join(profileModules, `.${MARKETPLACE_PACKAGE}.tmp-${process.pid}`)
+  mkdirSync(profileModules, { recursive: true })
+  rmSync(temporary, { recursive: true, force: true })
+  try {
+    cpSync(seedPackageDir, temporary, { recursive: true, dereference: true })
+    rmSync(target, { recursive: true, force: true })
+    renameSync(temporary, target)
+    writeJsonAtomic(join(target, MARKETPLACE_SEED_OWNERSHIP), {
+      schemaVersion: 1,
+      package: MARKETPLACE_PACKAGE,
+      version: seedVersion,
+    })
+  } finally {
+    rmSync(temporary, { recursive: true, force: true })
+  }
+}
+
+function removeOwnedSeedResidue(profileDir) {
+  const target = join(profileDir, 'node_modules', MARKETPLACE_PACKAGE)
+  const ownershipPath = join(target, MARKETPLACE_SEED_OWNERSHIP)
+  const packageManifestPath = join(target, 'package.json')
+  if (!existsSync(ownershipPath)) return false
+
+  let ownership
+  try {
+    ownership = readJson(ownershipPath)
+  } catch {
+    return false
+  }
+  if (
+    ownership?.schemaVersion !== 1 ||
+    ownership?.package !== MARKETPLACE_PACKAGE ||
+    typeof ownership?.version !== 'string'
+  ) {
+    return false
+  }
+  if (existsSync(packageManifestPath)) {
+    let manifest
+    try {
+      manifest = readJson(packageManifestPath)
+    } catch {
+      return false
+    }
+    if (manifest?.name !== MARKETPLACE_PACKAGE || manifest?.version !== ownership.version) return false
+  }
+  rmSync(target, { recursive: true, force: true })
+  return true
+}
+
+function withoutManagedPolicy(content) {
+  const start = content.indexOf(MANAGED_POLICY_START)
+  if (start === -1) return content
+  const end = content.indexOf(MANAGED_POLICY_END, start)
+  if (end === -1) return content
+  const after = end + MANAGED_POLICY_END.length
+  return `${content.slice(0, start)}${content.slice(after).replace(/^\r?\n/, '')}`
+}
+
+function meaningfulLines(content) {
+  return content
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line !== '' && !line.startsWith('#'))
+}
+
+function renderManagedPolicy(content, enabled) {
+  let base = withoutManagedPolicy(content).trimEnd()
+  const meaningful = meaningfulLines(base)
+
+  if (!enabled) {
+    return meaningful.length === 0 ? '[]\n' : `${base}\n`
+  }
+
+  // The initialized profile contains an empty top-level array. Remove only
+  // that placeholder before appending the managed array entry.
+  if (meaningful.length === 1 && meaningful[0] === '[]') {
+    base = base
+      .split(/\r?\n/)
+      .filter((line) => line.trim() !== '[]')
+      .join('\n')
+      .trimEnd()
+  }
+  return `${base === '' ? '' : `${base}\n`}${MANAGED_POLICY}\n`
+}
+
+function writePolicyAtomic(profileDir, enabled, loadOverlayPatches) {
+  const patchPath = join(profileDir, 'cordis.patch.yml')
+  const current = existsSync(patchPath) ? readFileSync(patchPath, 'utf8') : '[]\n'
+  const candidate = renderManagedPolicy(current, enabled)
+  if (candidate === current) return false
+
+  const temporary = `${patchPath}.tmp-${process.pid}.yml`
+  writeFileSync(temporary, candidate)
+  try {
+    loadOverlayPatches('dsh-desktop', temporary)
+    renameSync(temporary, patchPath)
+  } finally {
+    rmSync(temporary, { force: true })
+  }
+  return true
+}
+
+export async function ensureMarketplace(runtimeDir, dshHome = runtimeHome()) {
+  const seedDir = join(runtimeDir, MARKETPLACE_SEED_DIR)
+  const seedManifestPath = join(seedDir, 'manifest.json')
+  const seedPackageDir = join(seedDir, 'node_modules', MARKETPLACE_PACKAGE)
+  const seedPackageManifestPath = join(seedPackageDir, 'package.json')
+  if (!existsSync(seedManifestPath) || !existsSync(seedPackageManifestPath)) {
+    throw new Error(`bundled ${MARKETPLACE_PACKAGE} seed is missing`)
+  }
+  const seed = readJson(seedManifestPath)
+  const marketManifest = readJson(seedPackageManifestPath)
+  if (
+    seed.package !== MARKETPLACE_PACKAGE ||
+    typeof seed.version !== 'string' ||
+    seed.version === '' ||
+    !isUsableBundlePackage(seedPackageDir, marketManifest) ||
+    marketManifest.version !== seed.version
+  ) {
+    throw new Error(`bundled ${MARKETPLACE_PACKAGE} seed manifest is inconsistent`)
+  }
 
   // Import from the selected runtime instead of this script's source tree, so
   // the migration works both after packaging and in isolated smoke tests.
@@ -51,50 +286,137 @@ export async function ensureMarketplace(runtimeDir, dshHome = runtimeHome()) {
   const {
     PROFILE_TEMPLATES,
     initProfile,
+    loadOverlayPatches,
     readProfileManifest,
     resolveProfileDir,
     writeProfileManifest,
   } = await import(appBootUrl)
 
-  // resolveProfileDir reads DSH_HOME itself, while the optional argument makes
-  // this function easy to exercise without mutating a developer's real home.
-  const previousHome = process.env.DSH_HOME
-  process.env.DSH_HOME = dshHome
-  let profileDir
-  try {
-    profileDir = resolveProfileDir('web')
-  } finally {
-    if (previousHome === undefined) delete process.env.DSH_HOME
-    else process.env.DSH_HOME = previousHome
-  }
-
+  const profileDir = resolveProfileDir('web', dshHome)
   const profileManifestPath = join(profileDir, 'package.json')
   if (!existsSync(profileManifestPath)) {
     initProfile(profileDir, PROFILE_TEMPLATES.web)
   }
 
   const markerPath = join(profileDir, MARKETPLACE_MARKER)
-  if (existsSync(markerPath)) {
-    return { status: 'previouslyHandled', profileDir, version: marketManifest.version }
-  }
-
+  const marker = readMarker(markerPath)
+  const markerSchema = Number(marker?.schemaVersion ?? 0)
   const profile = readProfileManifest('dsh-desktop', profileDir)
+  profile.dependencies ??= {}
   profile.dsh ??= {}
   profile.dsh.profile ??= {}
   profile.dsh.profile.bundles ??= []
   const bundles = profile.dsh.profile.bundles
-  const added = !bundles.includes(MARKETPLACE_PACKAGE)
-  if (added) {
-    bundles.push(MARKETPLACE_PACKAGE)
-    writeProfileManifest(profileDir, profile)
+  const hasBundle = bundles.includes(MARKETPLACE_PACKAGE)
+  const hasDependency = Object.prototype.hasOwnProperty.call(
+    profile.dependencies,
+    MARKETPLACE_PACKAGE,
+  )
+  const activeManifestPath = join(profileDir, 'node_modules', MARKETPLACE_PACKAGE, 'package.json')
+  const dependencySpec = profile.dependencies[MARKETPLACE_PACKAGE]
+  let installedPackage
+  if (existsSync(activeManifestPath)) {
+    try {
+      const candidate = readJson(activeManifestPath)
+      if (isUsableBundlePackage(dirname(activeManifestPath), candidate)) {
+        installedPackage = candidate
+      }
+    } catch {
+      // An invalid package is treated like a missing one below. The seed can
+      // repair its own exact version; a user-selected version is quarantined.
+    }
+  }
+  const seedMatchesDependency = seedMatchesSpec(seed, dependencySpec)
+  const installedIsOwnedSeed = isOwnedSeedPackage(profileDir, installedPackage, seed.version)
+  const installedPackageUsable = installedPackage !== undefined && (
+    !installedIsOwnedSeed || seedMatchesDependency
+  )
+
+  let status = 'unchanged'
+  let bundleEnabled = hasBundle
+  let profileChanged = false
+  let suspension = marker?.suspended?.reason === 'missing-package'
+    ? marker.suspended
+    : undefined
+
+  const installSeed = (nextStatus) => {
+    copySeedPackage(seedPackageDir, profileDir, seed.version)
+    profile.dependencies[MARKETPLACE_PACKAGE] = seed.version
+    if (!hasBundle) bundles.push(MARKETPLACE_PACKAGE)
+    profileChanged = true
+    bundleEnabled = true
+    suspension = undefined
+    status = nextStatus
   }
 
+  if (suspension !== undefined && hasDependency && !hasBundle) {
+    if (installedPackageUsable) {
+      bundles.push(MARKETPLACE_PACKAGE)
+      profileChanged = true
+      bundleEnabled = true
+      suspension = undefined
+      status = 'repaired'
+    } else {
+      status = 'suspended'
+    }
+  } else if (!hasBundle && !hasDependency && markerSchema === 0) {
+    installSeed('installed')
+  } else if (hasBundle && !hasDependency) {
+    if (installedPackage !== undefined) {
+      // A package can survive an interrupted manifest write or pnpm command.
+      // Re-register what is physically present instead of replacing it with
+      // the build-time seed and potentially downgrading a user update.
+      profile.dependencies[MARKETPLACE_PACKAGE] = installedPackage.version
+      profileChanged = true
+      suspension = undefined
+      status = 'repaired'
+    } else {
+      installSeed(markerSchema === 1 ? 'migrated' : 'repaired')
+    }
+  } else if (hasBundle && hasDependency && !installedPackageUsable) {
+    if (installedPackage === undefined && seedMatchesDependency) {
+      installSeed('repaired')
+    } else {
+      // The seed cannot safely stand in for a missing beta, git, file, alias,
+      // or older registry selection. Preserve that spec, quarantine only the
+      // unresolved bundle so core DSH can boot, and restore it automatically
+      // once the user/package manager rematerializes the package.
+      profile.dsh.profile.bundles = bundles.filter((name) => name !== MARKETPLACE_PACKAGE)
+      profileChanged = true
+      bundleEnabled = false
+      suspension = {
+        reason: 'missing-package',
+        dependencySpec: String(dependencySpec),
+      }
+      status = 'suspended'
+      console.warn(
+        `ensure-marketplace: ${MARKETPLACE_PACKAGE}@${String(dependencySpec)} is unavailable; ` +
+        'its bundle was suspended without changing the dependency or installed files',
+      )
+    }
+  } else if (hasDependency && hasBundle) {
+    status = 'alreadyInstalled'
+    suspension = undefined
+  } else if (!hasBundle) {
+    status = 'previouslyRemoved'
+    if (!hasDependency) {
+      suspension = undefined
+      removeOwnedSeedResidue(profileDir)
+    }
+  }
+
+  if (profileChanged) writeProfileManifest(profileDir, profile)
+  writePolicyAtomic(profileDir, bundleEnabled, loadOverlayPatches)
   writeJsonAtomic(markerPath, {
-    schemaVersion: 1,
+    schemaVersion: MARKETPLACE_SCHEMA_VERSION,
     package: MARKETPLACE_PACKAGE,
-    version: marketManifest.version,
+    seededVersion: seed.version,
+    ...(suspension === undefined ? {} : { suspended: suspension }),
   })
-  return { status: added ? 'installed' : 'alreadyInstalled', profileDir, version: marketManifest.version }
+  const activeVersion = bundleEnabled && existsSync(activeManifestPath)
+    ? readJson(activeManifestPath).version
+    : profile.dependencies[MARKETPLACE_PACKAGE] ?? seed.version
+  return { status, profileDir, version: activeVersion }
 }
 
 if (process.argv[1]?.endsWith('ensure-marketplace.mjs')) {

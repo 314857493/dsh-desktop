@@ -10,7 +10,10 @@ import {
 import { join, extname, dirname, resolve } from 'node:path'
 
 const root = process.argv[2] ?? '.'
-const target = join(root, 'node_modules')
+const targets = [
+  join(root, 'node_modules'),
+  join(root, 'marketplace-seed', 'node_modules'),
+]
 
 let removed = 0
 let saved = 0
@@ -43,8 +46,13 @@ function walk(dir) {
   }
 }
 
-if (statSync(target, { throwIfNoEntry: false })) walk(target)
-console.log(`trim-runtime: removed ${removed} files, freed ${(saved / 1e6).toFixed(0)} MB under ${target}`)
+for (const target of targets) {
+  if (statSync(target, { throwIfNoEntry: false })) walk(target)
+}
+console.log(
+  `trim-runtime: removed ${removed} files, freed ${(saved / 1e6).toFixed(0)} MB ` +
+  `under ${targets.filter((target) => existsSync(target)).join(', ')}`,
+)
 
 // Phase 2: remove dangling junctions/symlinks (their targets are gone), which
 // would otherwise break resource bundling (tauri-build) and are invisible to
@@ -67,6 +75,6 @@ function sweep(dir) {
     }
   }
 }
-sweep(target)
+for (const target of targets) sweep(target)
 console.log(`trim-runtime: removed ${dangling.length} dangling links`)
 if (dangling.length > 0) console.log(dangling.slice(0, 10).join('\n'))
