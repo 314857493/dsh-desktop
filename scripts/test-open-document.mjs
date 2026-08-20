@@ -27,7 +27,7 @@ console.log('bin  =', BIN)
 console.log('home =', HOME)
 
 const out = fs.openSync(LOG, 'w')
-const child = spawn(NODE, [BIN, 'web', '--host', '127.0.0.1', '--port', String(PORT)], {
+const child = spawn(NODE, [BIN, 'web', '--host', '127.0.0.1', '--port', String(PORT), '--no-open'], {
   env: { ...process.env, DSH_HOME: HOME, CI: '1' },
   stdio: ['ignore', out, out],
   windowsHide: true,
