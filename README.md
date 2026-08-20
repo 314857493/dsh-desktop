@@ -180,8 +180,8 @@ node scripts/release.mjs --version 0.1.9   # 产物版本号（同步 Tauri + Ca
 
 定时发布通过 `concurrency` 串行执行；如果 changelog 提交成功后附件上传中断，下次检查会
 识别不完整 Release 并用同一版本重试。手动推送 `v*` tag 和 Actions 页面手动构建仍然可用。
-`.dsh-upstream.json` 以 `dsh-v0.1.0-rc.8` 作为自动化基线，因此启用工作流不会重复发布
-当前上游版本。
+`.dsh-upstream.json` 记录当前桌面端 v0.1.8 实际内置的 `dsh-v0.1.0-rc.7`，因此
+`dsh-v0.1.0-rc.8` 会作为首个待处理上游版本发布。
 
 自动发版需要仓库 Settings → Actions → General 中的 Workflow permissions 允许读写内容；
 如果 `main` 有分支保护，还需允许 `github-actions[bot]` 写入发布元数据提交，否则构建完成后

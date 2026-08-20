@@ -20,6 +20,12 @@ DeepSeek Harness 上游版本，以便复现构建和排查兼容性问题。
 - 更新器资产 URL 规范化：GitHub 会把带空格的文件名编码（`DSH Desktop_...` → `DSH.Desktop_...`），
   更新检查现在能正确匹配安装包资产，不再误报"无可用更新"。
 
+### 内置 DeepSeek Harness
+
+- 版本：`dsh-v0.1.0-rc.7`
+- Commit：`99f6f02fecdb7dff40c3fbc9470f5907c29f74ca`
+- [上游 Release Notes](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.0-rc.7)
+
 ## [0.1.7] - 2026-08-19
 
 ### 修复
