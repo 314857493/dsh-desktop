@@ -103,7 +103,7 @@ if (VERSION_ARG !== '') {
     [cargoPath, /^version\s*=\s*"[^"]*"/m, `version = "${clean}"`],
     [
       cargoLockPath,
-      /(\[\[package\]\]\nname = "dsh-desktop"\nversion = ")[^"]*(")/,
+      /(\[\[package\]\]\r?\nname = "dsh-desktop"\r?\nversion = ")[^"]*(")/,
       `$1${clean}$2`,
     ],
   ]) {
