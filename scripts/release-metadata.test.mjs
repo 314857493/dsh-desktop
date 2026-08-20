@@ -26,6 +26,7 @@ test('selectNextRelease processes one unseen release at a time', () => {
     { tag_name: 'dsh-v0.1.0-rc.8', draft: false },
     { tag_name: 'dsh-v0.1.0-rc.9', draft: false },
   ]
+  assert.equal(selectNextRelease(releases, 'dsh-v0.1.0-rc.7').tag_name, 'dsh-v0.1.0-rc.8')
   assert.equal(selectNextRelease(releases, 'dsh-v0.1.0-rc.8').tag_name, 'dsh-v0.1.0-rc.9')
   assert.equal(selectNextRelease(releases, null).tag_name, 'dsh-v0.1.0-rc.10')
 })

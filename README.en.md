@@ -159,8 +159,8 @@ versions, `CHANGELOG.md`, and `.dsh-upstream.json`, then publish signed updater 
 a `latest.json` manifest containing real update notes, and the GitHub Release. Runs are
 serialized, and an interrupted release with missing assets is retried with the same
 version. Pushing a `v*` tag and manual Actions builds remain supported. The checked-in
-`dsh-v0.1.0-rc.8` state is an automation baseline, so enabling the schedule does not
-republish the current upstream version.
+state records the `dsh-v0.1.0-rc.7` version actually bundled by DSH Desktop v0.1.8,
+so `dsh-v0.1.0-rc.8` is the first upstream release waiting to be published.
 
 Automatic publishing requires read/write Workflow permissions under Settings → Actions →
 General. If `main` is protected, allow `github-actions[bot]` to write the release-metadata
