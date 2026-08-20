@@ -2,6 +2,10 @@
 
 > **简体中文** | [English](README.en.md) | [更新日志](CHANGELOG.md)
 
+> [!IMPORTANT]
+> **非官方个人项目**：本项目由个人独立开发和维护，不是 DeepSeek 或 DeepSeek Harness
+> 官方项目，与其官方团队不存在隶属、合作或背书关系。
+
 基于 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（DSH）的
 桌面端拓展：以 Tauri 原生窗口壳承载 DSH 的 Web GUI，负责拉起 `dsh web` Node 服务器，
 等它就绪后把界面加载进 WebView2 窗口，关窗即关闭服务器。

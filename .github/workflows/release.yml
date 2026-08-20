@@ -4,9 +4,9 @@ on:
   push:
     tags: ['v*']
   schedule:
-    # Avoid the busy start of the hour. Scheduled workflows run from the
-    # default branch and process one unseen upstream release per run.
-    - cron: '17 * * * *'
+    # Run once per day at 02:17 UTC (10:17 Asia/Shanghai). Scheduled workflows
+    # run from the default branch and process one unseen upstream release.
+    - cron: '17 2 * * *'
   workflow_dispatch:
     inputs:
       upstream_ref:

@@ -1,4 +1,4 @@
-// Boot-test a DSH runtime: spawns `node <runtime>/lib/bin.js web --port 0`,
+// Boot-test a DSH runtime: spawns `node <runtime>/lib/bin.js web --port 0 --no-open`,
 // waits for the readiness line or a crash, prints the first N lines.
 import { spawn } from 'node:child_process'
 import { dirname, join } from 'node:path'
@@ -10,7 +10,7 @@ const runtime = process.argv[3] ?? join(here, '..', 'rt')
 const home = process.argv[4] ?? join(here, '..', '.dsh-boot-test')
 const timeoutMs = Number(process.argv[5] ?? 60000)
 
-const child = spawn(node, [runtime + '/lib/bin.js', 'web', '--host', '127.0.0.1', '--port', '0'], {
+const child = spawn(node, [runtime + '/lib/bin.js', 'web', '--host', '127.0.0.1', '--port', '0', '--no-open'], {
   cwd: runtime,
   env: { ...process.env, DSH_HOME: home, DSH_TELEMETRY_DISABLED: '1' },
   stdio: ['ignore', 'pipe', 'pipe'],

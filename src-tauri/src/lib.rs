@@ -7,8 +7,9 @@
 //!   2. If the resolved root is the bundled runtime, run its
 //!      `scripts/ensure-fallback.mjs` so the Cordis loader can resolve bundle
 //!      packages from the profile directory.
-//!   3. Spawn `node <root>/lib/bin.js web --host 127.0.0.1 --port 0` with the
-//!      resolved environment (bundled node dir prepended to PATH).
+//!   3. Spawn `node <root>/lib/bin.js web --host 127.0.0.1 --port 0`, adding
+//!      `--no-open` when supported, with the resolved environment (bundled node
+//!      dir prepended to PATH).
 //!   4. Watch the child's stdout for the readiness line
 //!      `dsh web: http://127.0.0.1:<port>` and navigate the webview there.
 //!   5. On app exit, kill the child process tree.
@@ -668,6 +669,26 @@ fn resolve_node(app: &AppHandle, configured: Option<String>) -> Result<PathBuf, 
 // Server lifecycle
 // ---------------------------------------------------------------------------
 
+const WEB_SERVER_ARGS: [&str; 5] = ["web", "--host", "127.0.0.1", "--port", "0"];
+
+fn web_runtime_supports_no_open(root: &Path) -> bool {
+    let startup = root
+        .join("node_modules")
+        .join("@deepseek-ai")
+        .join("dsh-web-app")
+        .join("lib")
+        .join("startup.js");
+    fs::read_to_string(startup).is_ok_and(|source| source.contains("--no-open"))
+}
+
+fn web_server_args(supports_no_open: bool) -> Vec<&'static str> {
+    let mut args = WEB_SERVER_ARGS.to_vec();
+    if supports_no_open {
+        args.push("--no-open");
+    }
+    args
+}
+
 /// Run the bundled runtime's `ensure-fallback.mjs` so the Cordis loader can
 /// resolve bundle packages from `$DSH_HOME/profiles`.
 fn run_ensure_fallback(node: &Path, root: &Path, dsh_home: Option<&str>) -> Result<(), String> {
@@ -706,13 +727,10 @@ fn spawn_server(
 
     let bin = root.join("lib").join("bin.js");
     let mut command = Command::new(node);
+    let server_args = web_server_args(web_runtime_supports_no_open(root));
     command
         .arg(&bin)
-        .arg("web")
-        .arg("--host")
-        .arg("127.0.0.1")
-        .arg("--port")
-        .arg("0")
+        .args(server_args)
         .current_dir(root)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -1333,4 +1351,19 @@ pub fn run() {
             RunEvent::ExitRequested { .. } | RunEvent::Exit => shutdown_server(app),
             _ => {}
         });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::web_server_args;
+
+    #[test]
+    fn desktop_server_suppresses_upstream_browser_handoff() {
+        assert!(web_server_args(true).contains(&"--no-open"));
+    }
+
+    #[test]
+    fn desktop_server_remains_compatible_with_older_runtimes() {
+        assert!(!web_server_args(false).contains(&"--no-open"));
+    }
 }
