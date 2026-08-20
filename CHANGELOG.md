@@ -8,7 +8,46 @@ DeepSeek Harness 上游版本，以便复现构建和排查兼容性问题。
 
 ## [Unreleased]
 
+## [0.1.9] - 2026-08-20
+
 ### 桌面端
+
+### 内置 DeepSeek Harness
+
+- 版本：`dsh-v0.1.0-rc.7` → `dsh-v0.1.0-rc.8`
+- Commit：`141eb6fef83422698aef7a981029e843e8161534`
+- [上游 Release Notes](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.0-rc.8)
+
+#### 新增功能
+
+* 增强多模态支持度，DeepSeek 模型适配器支持配置启用原生图片请求，`/goal`、`/plan` 等命令可接收图文输入，`@` 菜单支持引用文件和会话
+* Claude Code 与 Codex 子代理均可作为 Profile Bundle 按需安装，Codex 同时支持非交互权限模式和多个命名实例
+* Windows PTY 终端支持持久 PowerShell 会话， 并在极简模式预设中默认支持
+
+#### 问题修复
+
+* 修复图片尺寸过大或历史图片累计载荷过高导致模型请求失败的问题
+* 修正取消流式生成后已展示的回复前缀未带入后续提问和分叉会话
+* 修复部分自定义 OpenAI 兼容网关因请求格式差异无法调用，以及推理内容回传可能缺失问题
+
+#### 体验优化
+
+* 优化布局和信息呈现，涉及HOME 目录以 `~` 缩写表示、输入框窄屏布局、反馈界面等
+* 优化界面操作，涉及侧栏搜索焦点响应、工作流面板操作、模型选择器选中操作、打开本地文件失败支持重试等
+* 优化工具调用，`web_search` 支持并发查询、子代理 `reportDelivery` 会及时反馈并唤醒父任务
+* 优化安装与启动，改善下载依赖体积、本地运行 `dsh web` 时会自动打开浏览器
+* 改善大历史会话执行分叉操作上的性能耗时
+
+#### 其他变更
+
+* 改善 SQLite 后端的读写与分叉性能并降低存储体积，数据结构不兼容
+* 明确品牌使用规范：“DeepSeek Harness”是注册商标，详见 [品牌使用规范](https://github.com/deepseek-ai/deepseek-harness/blob/dsh-v0.1.0-rc.8/BRAND_GUIDELINES.zh.md)
+
+#### SDK
+
+* Python SDK 依赖配置覆盖 4 个内置 Agent 预设，并包含 `rg` / glob 搜索和 MCP stdio 工具所需依赖
+
+
 
 - 新增上游 DeepSeek Harness 版本监控、自动构建和发布流程。
 - 自动同步桌面端版本、上游固定状态、GitHub Release Notes 与应用内更新说明。
@@ -105,5 +144,7 @@ DeepSeek Harness 上游版本，以便复现构建和排查兼容性问题。
 - GitHub Actions：CI 校验（语法/空白/机器路径）+ Release 发布。
 - 双语 README（中/英）。
 
-[Unreleased]: https://github.com/314857493/dsh-desktop/compare/v0.1.8...HEAD
 [0.1.8]: https://github.com/314857493/dsh-desktop/releases/tag/v0.1.8
+
+[Unreleased]: https://github.com/314857493/dsh-desktop/compare/v0.1.9...HEAD
+[0.1.9]: https://github.com/314857493/dsh-desktop/compare/v0.1.8...v0.1.9
