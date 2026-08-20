@@ -14,8 +14,8 @@
  *   node scripts/release.mjs --version 0.1.4          # stamp the bundle version (Tauri + Cargo metadata)
  *
  * Pipeline (remote mode): fetch -> pnpm install -> pnpm build -> pnpm deploy
- *           -> patch-runtime -> ensure-fallback -> trim-runtime
- *           -> prune-rt (orphan deps, auto reference scan) -> boot-test -> tauri build
+ *           -> patch-runtime -> node/pnpm runtime -> bundled marketplace
+ *           -> startup migrations -> trim/prune -> boot-test -> tauri build
  * Artifact: src-tauri/target/release/bundle/nsis/DSH Desktop_*_x64-setup.exe
  */
 import { spawnSync } from 'node:child_process'
@@ -301,22 +301,22 @@ if (!existsSync(join(PROJECT, 'src-tauri', 'tauri.conf.json'))) fail(`project no
 // built; pass --rebuild-repo to force.
 if (USE_LOCAL) {
   if (REBUILD) {
-    step('0/12 rebuild DSH repo (pnpm run build)')
+    step('0/13 rebuild DSH repo (pnpm run build)')
     run('repo build', 'pnpm', ['run', 'build'], { cwd: REPO })
   } else {
     console.log(`skip repo rebuild (using current build artifacts in ${REPO}); add --rebuild-repo for a fully fresh release`)
   }
 } else {
-  step('1/12 pnpm install (frozen lockfile)')
+  step('1/13 pnpm install (frozen lockfile)')
   // confirmModulesPurge=false: pnpm aborts a full node_modules purge without
   // a TTY unless CI=true; the release pipeline is non-interactive by design.
   run('pnpm install', 'pnpm', ['install', '--frozen-lockfile', '--config.confirmModulesPurge=false'], { cwd: REPO })
-  step('2/12 build DSH repo (pnpm run build)')
+  step('2/13 build DSH repo (pnpm run build)')
   run('repo build', 'pnpm', ['run', 'build'], { cwd: REPO })
 }
 
 // ---------- 1. pnpm deploy -> rt ----------
-step('3/12 pnpm deploy -> rt')
+step('3/13 pnpm deploy -> rt')
 if (existsSync(rtDir)) {
   console.log('cleaning old rt...')
   rmSync(rtDir, { recursive: true, force: true })
@@ -324,20 +324,29 @@ if (existsSync(rtDir)) {
 run('pnpm deploy', 'pnpm', ['--filter', '@deepseek-ai/dsh', 'deploy', '--legacy', '--config.node-linker=hoisted', rtDir], { cwd: REPO })
 
 // ---------- 2. patch runtime deps ----------
-step('4/12 patch-runtime (restore runtime-needed devDeps)')
+step('4/13 patch-runtime (restore runtime-needed devDeps)')
 runNode('patch-runtime', join(here, 'patch-runtime.mjs'), [rtDir, REPO])
 
-// ---------- 3. ensure-fallback ----------
-step('5/12 install ensure-fallback script')
+// ---------- 3. ensure node + private package manager runtime ----------
+step('5/13 ensure node-runtime (copy core Node from system)')
+ensureNodeRuntime()
+
+// ---------- 4. marketplace ----------
+step('6/13 bundle plugin marketplace and private pnpm')
+runNode('bundle-marketplace', join(here, 'bundle-marketplace.mjs'), [rtDir, nodeRuntime])
+
+// ---------- 5. startup migrations ----------
+step('7/13 install runtime preparation scripts')
 mkdirSync(join(rtDir, 'scripts'), { recursive: true })
 copyFileSync(join(here, 'ensure-fallback.mjs'), join(rtDir, 'scripts', 'ensure-fallback.mjs'))
+copyFileSync(join(here, 'ensure-marketplace.mjs'), join(rtDir, 'scripts', 'ensure-marketplace.mjs'))
 
-// ---------- 4. trim maps/types/sources ----------
-step('6/12 trim-runtime (strip maps/d.ts/sources)')
+// ---------- 6. trim maps/types/sources ----------
+step('8/13 trim-runtime (strip maps/d.ts/sources)')
 runNode('trim-runtime', join(here, 'trim-runtime.mjs'), [rtDir])
 
-// ---------- 5. prune orphan deps (back up the previous installer first) ----------
-step('7/12 prune-rt (remove runtime-unneeded orphan deps)')
+// ---------- 7. prune orphan deps (back up the previous installer first) ----------
+step('9/13 prune-rt (remove runtime-unneeded orphan deps)')
 if (IS_WIN) {
   const nsisDir = join(PROJECT, 'src-tauri', 'target', 'release', 'bundle', 'nsis')
   const installers = existsSync(nsisDir) ? readdirSync(nsisDir).filter((f) => f.endsWith('-setup.exe')).map((f) => join(nsisDir, f)) : []
@@ -350,13 +359,9 @@ if (IS_WIN) {
 }
 runNode('prune-rt', join(here, 'prune-rt.mjs'), [rtDir, backup])
 
-// ---------- 6. ensure node-runtime (copy core Node from system) ----------
-step('8/12 ensure node-runtime (copy core Node from system)')
-ensureNodeRuntime()
-
-// ---------- 7. runtime smoke test ----------
+// ---------- 8. runtime smoke test ----------
 if (!SKIP_BOOT) {
-  step('9/12 boot-test (runtime smoke test)')
+  step('10/13 boot-test (runtime + marketplace smoke test)')
   const nodeExe = join(nodeRuntime, NODE_BIN)
   const testHome = join(PROJECT, `.dsh-boot-test-${stamp}`)
   runNode('boot-test', join(here, 'boot-test.mjs'), [nodeExe, rtDir, testHome])
@@ -365,8 +370,8 @@ if (!SKIP_BOOT) {
   console.log('skipping smoke test (--skip-boot-test)')
 }
 
-// ---------- 8. build ----------
-step('10/12 tauri build')
+// ---------- 9. build ----------
+step('11/13 tauri build')
 if (process.platform === 'darwin') {
   // GitHub Actions exposes missing secrets as present-but-empty environment
   // variables. Tauri treats an empty APPLE_CERTIFICATE as configured and
@@ -422,7 +427,7 @@ runTauri('tauri build', buildArgs)
 // bundles. Validate the Debian signature explicitly because the updater
 // manifest exposes a separate `linux-<arch>-deb` target.
 if (process.platform === 'linux' && !NO_UPDATER) {
-  step('11/12 verify Debian updater signature')
+  step('12/13 verify Debian updater signature')
   const debDir = join(PROJECT, 'src-tauri', 'target', 'release', 'bundle', 'deb')
   const debs = existsSync(debDir)
     ? readdirSync(debDir).filter((file) => file.endsWith('.deb')).map((file) => join(debDir, file))

@@ -17,6 +17,7 @@ This project does **not modify the DSH core** — the agent loop, tool calling, 
 - 🔒 **Isolated data directory** — uses a dedicated `~/.dsh-desktop` by default, separate from the browser GUI (`~/.dsh`), avoiding session-log corruption from two instances writing the same session
 - 🧹 **Reliable process cleanup** — kills the process tree with `taskkill /T /F` on exit plus a Windows Job Object with kill-on-close (even if the app is force-killed or crashes, the OS cleans up the server tree — no orphans)
 - 🔗 **External links go to the system browser** — links in answers/settings open in the default browser (opener plugin + a loopback remote capability); the config file opens in the default editor
+- 🧩 **Built-in plugin market** — ships the community `dshmarket` for browsing, installing, updating, disabling, and removing DSH plugins; a private pnpm is bundled as well
 - 📦 **Self-contained distribution** — bundles a Node.js runtime and a pruned DSH runtime; end users install nothing
 - ⚙️ **Configurable** — four-level precedence: bundled resources < config file < env vars < CLI args
 - 🔄 **Tracks upstream** — the release script pulls DSH source from the official repository and can pin a tag/branch
@@ -30,6 +31,7 @@ This project does **not modify the DSH core** — the agent loop, tool calling, 
 | OS | Windows 10/11 x64 |
 | WebView2 runtime | Auto-detected/installed by the installer (usually preinstalled on Win11) |
 | Node.js | **Not needed** (bundled with the installer) |
+| pnpm | **Not needed** (a private copy used only for DSH plugin management is bundled) |
 | DSH source | **Not needed** (a pruned DSH runtime is bundled) |
 
 ### Build / release (developers)
@@ -56,7 +58,7 @@ This project does **not modify the DSH core** — the agent loop, tool calling, 
 
 ### 1. Self-contained (for end users, recommended)
 
-The installer bundles a Node.js runtime (`node-runtime/` → installed as `node/`) and a pruned DSH runtime (`rt/` → installed as `dsh/`; sources/maps/types/orphan deps stripped, ~200 MB). End users **install nothing** — just run it. Installer is ~**57 MB**.
+The installer bundles a Node.js runtime (`node-runtime/` → installed as `node/`) and a pruned DSH runtime (`rt/` → installed as `dsh/`; sources/maps/types/orphan deps stripped). End users **install nothing** — just run it. Artifact size varies with the bundled DSH and market versions.
 
 ### 2. Source mode (local / developer use)
 
@@ -93,6 +95,22 @@ CLI args: `dsh-desktop.exe --dsh-root <path> [--node <path>] [--home <path>]`
 
 > **Data isolation**: the desktop app defaults to a dedicated `~/.dsh-desktop` to avoid corrupting session logs by writing the same session from two instances (DSH requires one live writer per session). To share history, set `dsh_home` to `~/.dsh` explicitly — but never let both instances process messages for the same session at the same time.
 
+## Plugin Market
+
+Self-contained builds preinstall the latest registry release available at build time of the open-source community plugin
+[`dshmarket`](https://github.com/dsh-market/dsh-market). Open **Settings → Plugin Market**
+to browse and search the community catalog, install plugins with confirmation, and manage updates,
+disablement, or removal. All operations run in the local DSH process. The desktop bundle carries a
+pinned private pnpm, so no system Node, npm, or pnpm setup is required.
+
+On first launch, Desktop adds the market to the current `web` profile once and records a marker in
+that profile. If the user later uninstalls it, subsequent launches do not force it back. Resetting the
+entire profile also removes the marker and restores the desktop defaults. User-installed plugins,
+configuration, and market state remain under `DSH_HOME` (normally `~/.dsh-desktop`) across app updates.
+
+> A market listing is not an endorsement by this project or DeepSeek. Plugins execute with local-code
+> privileges: verify the source, repository, and permission/build-script prompts before installing.
+
 ## Build / Release (fully automated)
 
 ```bash
@@ -128,7 +146,7 @@ node scripts/release.mjs --version 0.1.9   # artifact version (syncs Tauri + Car
 
 Remote source is cached in `repo-cache/deepseek-harness/` (shallow clone; subsequent runs do an incremental fetch and never touch your local dev checkout).
 
-**Bundled Node runtime**: `release.mjs` copies the **core files** from your system Node install (`node.exe` + npm/npx/corepack, ~100 MB) into `node-runtime/` — **no download**, and your globally installed npm packages never leak into the installer. It is shipped with the installer, so end users don't need Node.
+**Bundled Node / pnpm runtime**: `release.mjs` copies the core Node runtime from the build machine into `node-runtime/`, then stages pinned `pnpm@11.22.0` from the registry as the app-private plugin package manager. Globally installed packages from the build machine are never copied. End users need neither Node, npm, nor pnpm.
 
 ### Two source modes
 
@@ -137,21 +155,23 @@ Remote source is cached in `repo-cache/deepseek-harness/` (shallow clone; subseq
 | **Default (remote)** | `git fetch` → `pnpm install` → `pnpm run build` → deploy… | no local clone / want latest / CI |
 | **`--local`** | checks for built artifacts (`apps/cli/lib/bin.js` etc.): **already built → skips install+build and packages directly**; if not built, needs `--rebuild-repo` | local clone already built — near-instant packaging |
 
-### Pipeline (remote mode, 12 steps)
+### Pipeline (remote mode, 13 steps)
 
 0. `git fetch` remote source (default `master`; `--ref` pins a tag/branch/commit)
 1. `pnpm install` (frozen lockfile)
 2. `pnpm run build` (remote clones carry source only — lib/dist are not git-tracked — so a build is required)
 3. `pnpm deploy` generates the self-contained runtime `rt/` from the DSH repo
 4. `patch-runtime` restores runtime-needed deps that pnpm deploy pruned
-5. installs `ensure-fallback.mjs`
-6. `trim-runtime` strips maps/types/sources
-7. `prune-rt` **auto-scans**: dependency closure + reference scan over runtime code, removing orphan packages with no references
+5. `ensure node-runtime` copies the core Node runtime
+6. `bundle-marketplace` resolves and bundles the build-time `dshmarket@latest`
+   (recording the exact version in the runtime manifest) and pins private `pnpm@11.22.0`
+7. installs the fallback and one-time market profile migration scripts
+8. `trim-runtime` strips maps/types/sources
+9. `prune-rt` **auto-scans**: dependency closure + reference scan over runtime code, removing orphan packages with no references
    (the previous installer is auto-backed up to `backup-pre-prune/`; referenced/undeclared runtime deps such as tsx are kept automatically)
-8. `ensure node-runtime` copies core Node files from the system install (node.exe + npm/corepack)
-9. `boot-test` runtime smoke test (boots the server, waits for the ready line)
-10. `tauri build` produces the installer
-11. Linux builds additionally sign the `.deb` updater artifact
+10. `boot-test` verifies the runtime, market route, and private pnpm
+11. `tauri build` produces the installer
+12. Linux builds additionally sign the `.deb` updater artifact
 
 > Every release **re-scans dependencies automatically**: when DSH updates, new deps are kept and new garbage is pruned — no manual maintenance.
 
@@ -219,13 +239,13 @@ signed release is the preferred long-term fix.
 
 ### Artifacts
 
-- Installer: `src-tauri/target/release/bundle/nsis/DSH Desktop_*_x64-setup.exe` (~57 MB)
+- Installer: `src-tauri/target/release/bundle/nsis/DSH Desktop_*_x64-setup.exe`
 - Portable: `src-tauri/target/release/dsh-desktop.exe` + `dsh/` + `node/` directories
 
 ## How It Works
 
 1. The Rust shell resolves configuration (bundled `dsh/` + `node/` take precedence) and locates node and `lib/bin.js`.
-2. With the bundled runtime, it first runs `ensure-fallback.mjs`, which links all `@deepseek-ai` packages into `$DSH_HOME/profiles/node_modules` so the Cordis loader can resolve packages from the config directory (pnpm deploy output lacks the per-package repo-style links — this is a required fix-up).
+2. With the bundled runtime, it runs `ensure-fallback.mjs` to make shipped packages resolvable from the profile directory, then a one-time market migration that adds the preinstalled `dshmarket` bundle while preserving any later user uninstall.
 3. It starts the server with `web --host 127.0.0.1 --port 0` (OS-assigned port, avoiding conflicts) and prepends the bundled node dir to the child's PATH; children run silently with `CREATE_NO_WINDOW`.
 4. It watches the child's stdout for the readiness line `dsh web: http://127.0.0.1:<port>` and navigates the WebView there.
 5. On exit it kills the process tree with `taskkill /T /F`; the child is also in a Windows Job Object with kill-on-close — the server is cleaned up no matter how the app exits (close/crash/force-kill).
@@ -245,13 +265,15 @@ dsh-desktop/
 │   └── icons/            # icon assets (generated from the official SVG)
 ├── dist/                 # splash page (loading page shown before the server is ready)
 ├── scripts/
-│   ├── release.mjs            # one-command release (remote/local, 12 steps)
+│   ├── release.mjs            # one-command release (remote/local, 13 steps)
 │   ├── release-metadata.mjs   # upstream detection, version bump, changelog / release notes
 │   ├── patch-runtime.mjs      # restores runtime-needed deps pruned by deploy
+│   ├── bundle-marketplace.mjs # bundles latest community market + pinned private pnpm
 │   ├── trim-runtime.mjs       # strips maps/types/sources
 │   ├── prune-rt.mjs           # auto orphan-dep pruning (closure + reference scan)
 │   ├── ensure-fallback.mjs    # links bundled packages into DSH_HOME at launch
-│   ├── boot-test.mjs          # runtime smoke test
+│   ├── ensure-marketplace.mjs # one-time market mount that respects later uninstall
+│   ├── boot-test.mjs          # runtime + marketplace smoke test
 │   ├── gen-app-icon-svg.mjs   # generates icons from the official SVG (uses glyph-path.txt)
 │   ├── repair-session-log.mjs # session-log repair (rebuilds contiguous seq after dual-writer corruption)
 │   ├── test-open-document.mjs # e2e check of the open-config-file path (TEST_NODE/TEST_BIN point at a runtime)
@@ -270,6 +292,7 @@ dsh-desktop/
 - **Session history fails to load** (`corrupt session log: seq gap ...`): caused by two instances writing the same session. Fix with `node scripts/repair-session-log.mjs <session.jsonl.zstd>` (keeps the live timeline and aligns with the running instance's counter); back up the file first.
 - **Desktop icon does not update**: clear the Windows icon cache (delete `IconCache.db` and restart Explorer); shortcuts already point at the standalone `dsh-desktop.ico`.
 - **External link clicks do nothing**: the opener plugin depends on the remote capability (see How It Works). Make sure the installed build includes `capabilities/remote-opener.json` (from `v0.2.x`); reinstall if you are on an older build.
+- **The market opens but cannot install**: check the pnpm status at the top of the market page. New builds bundle a private pnpm; if it is still unavailable, reinstall in case security software quarantined `node/pnpm`, then inspect `dsh-desktop.log`. Catalog/package download failures usually require restoring npm/GitHub network access and retrying.
 - **"Open config file" does nothing (Windows)**: DSH opens files through the extension association on Windows; if `.yaml`/`.yml` has no default association, the system silently ignores the request. Set a per-user association, e.g. open with Cursor (matches "Open with → Cursor"):
 
   ```bat

@@ -4,9 +4,10 @@
 //! Lifecycle:
 //!   1. Resolve configuration (bundled resources < config file
 //!      < env vars < CLI args): DSH runtime root, node.exe, DSH_HOME.
-//!   2. If the resolved root is the bundled runtime, run its
-//!      `scripts/ensure-fallback.mjs` so the Cordis loader can resolve bundle
-//!      packages from the profile directory.
+//!   2. If the resolved root is the bundled runtime, run its preparation
+//!      scripts: `ensure-fallback.mjs` makes shipped packages resolvable from
+//!      profiles, and `ensure-marketplace.mjs` mounts the preinstalled plugin
+//!      market once without overriding a later user uninstall.
 //!   3. Spawn `node <root>/lib/bin.js web --host 127.0.0.1 --port 0`, adding
 //!      `--no-open` when supported, with the resolved environment (bundled node
 //!      dir prepended to PATH).
@@ -714,6 +715,34 @@ fn run_ensure_fallback(node: &Path, root: &Path, dsh_home: Option<&str>) -> Resu
     Ok(())
 }
 
+/// Activate the marketplace shipped by DSH Desktop for this profile. The
+/// migration owns a marker inside the profile, so it runs once and never
+/// silently reverses a later user uninstall. Marketplace failure is optional:
+/// the caller logs it and continues to boot the core DSH experience.
+fn run_ensure_marketplace(node: &Path, root: &Path, dsh_home: &str) -> Result<(), String> {
+    let script = root.join("scripts").join("ensure-marketplace.mjs");
+    if !script.is_file() {
+        return Ok(()); // external/older runtimes do not ship the marketplace
+    }
+    let mut command = Command::new(node);
+    command
+        .arg(&script)
+        .arg(root)
+        .env("DSH_HOME", dsh_home)
+        .stdin(Stdio::null());
+    hide_console(&mut command);
+    let status = command
+        .status()
+        .map_err(|err| format!("无法准备插件商城: {err}"))?;
+    if !status.success() {
+        return Err(format!(
+            "插件商城准备脚本退出码 {}",
+            status.code().unwrap_or(-1)
+        ));
+    }
+    Ok(())
+}
+
 fn spawn_server(
     app: &AppHandle,
     window: WebviewWindow,
@@ -723,6 +752,13 @@ fn spawn_server(
 ) -> Result<Child, String> {
     if let Err(message) = run_ensure_fallback(node, root, Some(&dsh_home)) {
         return Err(message);
+    }
+    if let Err(message) = run_ensure_marketplace(node, root, &dsh_home) {
+        log(&format!(
+            "[marketplace] optional preparation failed: {message}"
+        ));
+    } else {
+        log("[marketplace] profile preparation complete");
     }
 
     let bin = root.join("lib").join("bin.js");

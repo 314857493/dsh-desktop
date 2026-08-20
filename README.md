@@ -22,6 +22,8 @@ DSH，本仓库提供的是桌面封装、自包含打包与自动化发布（�
   kill-on-close（app 即使被强杀/崩溃，服务器进程树也会被 OS 强制清理，不留孤儿）
 - 🔗 **外链交给系统浏览器**：回答/设置里的外部链接用系统默认浏览器打开（opener 插件 +
   面向回环地址的 remote capability），配置文件用系统默认编辑器打开
+- 🧩 **内置插件商城**：预装社区 `dshmarket`，可在设置中搜索、安装、更新、停用和卸载
+  DSH 社区插件；同时内置私有 pnpm，最终用户无需另外配置包管理器
 - 📦 **自包含分发**：内置 Node.js 运行时 + 裁剪过的 DSH 运行环境，对方无需安装任何东西
 - ⚙️ **可配置**：内置资源 / 配置文件 / 环境变量 / 命令行参数四级优先级
 - 🔄 **跟随上游**：发布脚本从 DSH 官方仓库拉取源码构建，可固定 tag/分支，随上游更新
@@ -35,6 +37,7 @@ DSH，本仓库提供的是桌面封装、自包含打包与自动化发布（�
 | 操作系统 | Windows 10/11 x64 |
 | WebView2 运行时 | 安装包自动检测/安装（Win11 一般自带），无需手动处理 |
 | Node.js | **不需要**（安装包内置 node 运行时） |
+| pnpm | **不需要**（安装包内置仅供 DSH 插件管理使用的私有 pnpm） |
 | DSH 源码 | **不需要**（内置裁剪过的 DSH 运行环境） |
 
 ### 构建 / 发布环境（开发者）
@@ -64,7 +67,7 @@ DSH，本仓库提供的是桌面封装、自包含打包与自动化发布（�
 
 安装包内**内置**了 Node.js 运行时（`node-runtime/` → 安装后 `node/`）和精简的 DSH
 运行环境（`rt/` → 安装后 `dsh/`，已裁剪源码/map/类型/孤儿依赖，约 200 MB）。
-对方**无需安装任何东西**，装完双击即用。安装包约 **57 MB**。
+对方**无需安装任何东西**，装完双击即用；实际安装包体积随内置 DSH 与商城版本变化。
 
 ### 2. 源码版（本机/开发者用）
 
@@ -109,6 +112,21 @@ DSH，本仓库提供的是桌面封装、自包含打包与自动化发布（�
 > 如需共享会话历史，可显式把 `dsh_home` 设为 `~/.dsh`，但不要同时让两个
 > 实例处理同一个会话的消息。
 
+## 插件商城
+
+自包含安装包预装发布构建时最新版的开源社区插件
+[`dshmarket`](https://github.com/dsh-market/dsh-market)。打开 **设置 → 插件商城** 即可
+浏览社区目录、搜索并一键安装插件，也可以在已安装列表中更新、停用或卸载。商城和安装操作
+都在本机 DSH 进程内完成；桌面端附带固定版本的私有 pnpm，不依赖系统 Node、npm 或 pnpm。
+
+首次启动时，桌面端只把商城加入当前 `web` profile 一次，并在 profile 内记录迁移标记。
+用户之后主动卸载商城，后续启动不会强制装回；删除整个 profile 后重新初始化，则会恢复桌面端
+默认预装项。用户安装的插件、配置和商城状态都位于 `DSH_HOME`（默认
+`~/.dsh-desktop`），应用升级不会覆盖。
+
+> 商城收录不代表本项目或 DeepSeek 对第三方插件背书。插件与本地代码拥有相同进程权限，
+> 安装前请核对来源、仓库和权限提示；需要构建脚本的包默认不会被 pnpm 自动放行。
+
 ## 构建 / 发布（全自动）
 
 ```bash
@@ -142,9 +160,9 @@ node scripts/release.mjs --version 0.1.9   # 产物版本号（同步 Tauri + Ca
 远程源码缓存在 `repo-cache/deepseek-harness/`（浅克隆，后续运行增量 fetch，不触碰
 本机开发用的 checkout）。
 
-**内置 Node 运行时**：`release.mjs` 会从系统 Node 安装中**复制核心文件**
-（`node.exe` + npm/npx/corepack，约 100 MB）到 `node-runtime/`——**无需下载**，
-也不会把全局安装的 npm 包带进安装包。打包时随安装包一并分发，最终用户无需装 Node。
+**内置 Node / pnpm 运行时**：`release.mjs` 会从系统 Node 安装中复制核心运行时到
+`node-runtime/`，再从 registry 固定安装 `pnpm@11.22.0` 作为应用私有的插件包管理器；
+不会把构建机全局安装的 npm 包带进安装包。最终用户无需安装 Node、npm 或 pnpm。
 
 ### 两种源码来源
 
@@ -153,21 +171,23 @@ node scripts/release.mjs --version 0.1.9   # 产物版本号（同步 Tauri + Ca
 | **默认（远程）** | `git fetch` → `pnpm install` → `pnpm run build` → deploy… | 无本地 clone / 要最新代码 / CI |
 | **`--local`（本地）** | 校验 `apps/cli/lib/bin.js` 等构建产物：**已构建 → 跳过 install+build 直接打包**；未构建 → 需 `--rebuild-repo` 先构建 | 本地已有 clone 且构建过，秒级出包 |
 
-### 流水线（远程模式 12 步）
+### 流水线（远程模式 13 步）
 
 0. `git fetch` 远程源码（默认 `master`，可 `--ref` 指定 tag/分支/commit）
 1. `pnpm install`（frozen lockfile）
 2. `pnpm run build`（远程克隆只有源码，lib/dist 不被 git 跟踪，必须构建）
 3. `pnpm deploy` 从 DSH 仓库生成自包含运行时 `rt/`
 4. `patch-runtime` 补齐 pnpm deploy 剪掉的运行时依赖
-5. 放入 `ensure-fallback.mjs`
-6. `trim-runtime` 裁剪 map/类型/源码
-7. `prune-rt` **自动扫描**：依赖闭包 + 运行时代码引用扫描，删除确无引用的孤儿包
+5. `ensure node-runtime` 从系统 Node 复制核心运行时
+6. `bundle-marketplace` 解析并预置构建时的 `dshmarket@latest`（实际版本写入运行时
+   manifest），同时固定预置私有 `pnpm@11.22.0`
+7. 放入 `ensure-fallback.mjs` 与一次性商城 profile 迁移脚本
+8. `trim-runtime` 裁剪 map/类型/源码
+9. `prune-rt` **自动扫描**：依赖闭包 + 运行时代码引用扫描，删除确无引用的孤儿包
    （旧安装包自动备份到 `backup-pre-prune/`；被引用/未声明的运行时依赖如 tsx 自动保留）
-8. `ensure node-runtime` 从系统 Node 复制核心文件（node.exe + npm/corepack）
-9. `boot-test` 运行时冒烟测试（起服务器、等就绪行）
-10. `tauri build` 产出安装包
-11. Linux 构建额外签署 `.deb` updater 产物
+10. `boot-test` 运行时与商城冒烟测试（起服务器、检查商城路由和私有 pnpm）
+11. `tauri build` 产出安装包
+12. Linux 构建额外签署 `.deb` updater 产物
 
 > 每次发布都会**重新自动扫描**依赖：DSH 源码更新后，新依赖自动保留、
 > 新垃圾自动裁剪，无需手动维护清单。
@@ -246,7 +266,7 @@ open "/Applications/DSH Desktop.app"
 
 ### 产物
 
-- 安装包：`src-tauri/target/release/bundle/nsis/DSH Desktop_*_x64-setup.exe`（约 57 MB）
+- 安装包：`src-tauri/target/release/bundle/nsis/DSH Desktop_*_x64-setup.exe`
 - 绿色版：`src-tauri/target/release/dsh-desktop.exe` + `dsh/` + `node/` 目录
 
 ## 工作原理
@@ -254,7 +274,8 @@ open "/Applications/DSH Desktop.app"
 1. Rust 壳解析配置（内置 `dsh/` + `node/` 优先），找到 node 与 `lib/bin.js`。
 2. 若使用内置运行时，先跑 `ensure-fallback.mjs`：把运行时内所有 `@deepseek-ai`
    包链接进 `$DSH_HOME/profiles/node_modules`，让 Cordis loader 能从配置文件目录
-   解析到包（pnpm deploy 产物没有仓库布局的逐包链接，这是必需的补齐步骤）。
+   解析到包；再跑一次性商城迁移，将预装 `dshmarket` 追加到 `web` profile，同时尊重
+   用户后续卸载选择。
 3. 以 `web --host 127.0.0.1 --port 0` 启动服务器（端口由 OS 分配，避免冲突），
    并把内置 node 目录加到子进程 PATH；子进程 `CREATE_NO_WINDOW` 静默运行。
 4. 读取子进程 stdout，捕获 `dsh web: http://127.0.0.1:<port>` 就绪行后，
@@ -282,12 +303,14 @@ dsh-desktop/
 │   └── icons/            # 图标资源（由官方 SVG 生成）
 ├── dist/                 # 启动页（loading 页，服务器就绪前展示）
 ├── scripts/
-│   ├── release.mjs            # 一键发布（远程/本地，12 步）
+│   ├── release.mjs            # 一键发布（远程/本地，13 步）
 │   ├── release-metadata.mjs   # 上游检测、版本递增、changelog / Release Notes
 │   ├── patch-runtime.mjs      # 补齐 deploy 剪掉的运行时依赖
+│   ├── bundle-marketplace.mjs # 打包最新版社区商城 + 固定版私有 pnpm
 │   ├── trim-runtime.mjs       # 裁剪 map/类型/源码
 │   ├── prune-rt.mjs           # 孤儿依赖自动裁剪（闭包 + 引用扫描）
 │   ├── ensure-fallback.mjs    # 启动时链接内置包到 DSH_HOME
+│   ├── ensure-marketplace.mjs # 首次启动挂载商城，保留用户卸载选择
 │   ├── boot-test.mjs          # 运行时冒烟测试
 │   ├── gen-app-icon-svg.mjs   # 从官方 SVG 生成图标（含 glyph-path.txt）
 │   ├── repair-session-log.mjs # 会话日志修复（双实例写坏时重建连续 seq）
@@ -312,6 +335,9 @@ dsh-desktop/
   快捷方式已直接引用独立的 `dsh-desktop.ico`。
 - **外链点击没反应**：opener 插件依赖 remote capability（见「工作原理」）。确认安装包
   版本包含 `capabilities/remote-opener.json`（`v0.2.x` 起）；旧版本请重装。
+- **商城能打开但无法安装**：先看商城页顶部的 pnpm 状态。新版安装包自带私有 pnpm；
+  若仍显示不可用，通常是安装包资源缺失或安全软件隔离了 `node/pnpm`，建议重装并查看
+  `dsh-desktop.log`。目录拉取失败则检查到 npm/GitHub 的网络连接后重试。
 - **「打开配置文件」没反应（Windows）**：DSH 在 Windows 上靠扩展名关联打开文件；
   若 `.yaml`/`.yml` 无默认关联，系统会静默忽略。为当前用户设置关联即可，例如
   用 Cursor 打开（与「打开方式 → Cursor」一致）：
