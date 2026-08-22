@@ -8,6 +8,32 @@ DeepSeek Harness 上游版本，以便复现构建和排查兼容性问题。
 
 ## [Unreleased]
 
+## [0.1.12] - 2026-08-22
+
+### 桌面端
+
+- 无桌面壳代码变更；此版本用于同步上游 DeepSeek Harness。
+
+### 内置 DeepSeek Harness
+
+- 版本：`dsh-v0.1.0-rc.8` → `dsh-v0.1.1-rc.1`
+- Commit：`528c682e061696f5a160f363f236ecbf53cbd006`
+- [上游 Release Notes](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.1-rc.1)
+
+#### 新增功能
+
+* DeepSeek 适配器新增多模态视觉理解模型 `DeepSeek-V4-Flash-Vision-Exp`
+
+#### 问题修复
+
+* 修复在输入框的 `@` 引用前增删改文本时，潜在的布局问题
+* 修复 Bubblewrap 沙箱内的受限进程可经 `/proc/<pid>/root` 绕过限制的问题
+
+#### 体验优化
+
+* 优化会话 Markdown 表格自适应表现、缓存命中率在 99.x% 时的精度显示、子代理会话标题切换交互
+* `ask_user_question` 回答内容支持多行输入、自动换行、`Shift+Enter` 换行
+
 ## [0.1.11] - 2026-08-20
 
 ### 新增
@@ -253,5 +279,7 @@ DeepSeek Harness 上游版本，以便复现构建和排查兼容性问题。
 
 [0.1.10]: https://github.com/314857493/dsh-desktop/compare/v0.1.9...v0.1.10
 
-[Unreleased]: https://github.com/314857493/dsh-desktop/compare/v0.1.11...HEAD
 [0.1.11]: https://github.com/314857493/dsh-desktop/compare/v0.1.10...v0.1.11
+
+[Unreleased]: https://github.com/314857493/dsh-desktop/compare/v0.1.12...HEAD
+[0.1.12]: https://github.com/314857493/dsh-desktop/compare/v0.1.11...v0.1.12
