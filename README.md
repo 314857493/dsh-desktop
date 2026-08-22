@@ -8,24 +8,28 @@
 
 基于 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（DSH）的
 桌面端拓展：以 Tauri 原生窗口壳承载 DSH 的 Web GUI，负责拉起 `dsh web` Node 服务器，
-等它就绪后把界面加载进 WebView2 窗口，关窗即关闭服务器。
+等它就绪后把界面加载进系统 WebView，退出应用时关闭服务器。发布流程同时支持
+Windows、macOS 和 Linux。
 
 本项目**不改动 DSH 内核**——Agent 循环、工具调用、会话持久化等全部来自上游
 DSH，本仓库提供的是桌面封装、自包含打包与自动化发布（构建、裁剪、冒烟测试、安装包）。
 
 ## 特性
 
-- 🖥️ **桌面一键启动**：双击即用，无控制台弹窗（子进程全部 `CREATE_NO_WINDOW`）
+- 🖥️ **桌面一键启动**：打开安装后的应用即用；Windows 子进程使用
+  `CREATE_NO_WINDOW`，不会闪现控制台
+- 1️⃣ **单实例**：重复启动只会显示并聚焦已打开的主窗口，不会再启动一个服务器
 - 🔒 **数据目录隔离**：默认使用独立的 `~/.dsh-desktop`，与浏览器 GUI（`~/.dsh`）
   互不干扰，避免双实例写同一会话导致日志损坏
-- 🧹 **进程清理可靠**：退出时 `taskkill /T /F` 杀进程树 + Windows Job Object
-  kill-on-close（app 即使被强杀/崩溃，服务器进程树也会被 OS 强制清理，不留孤儿）
+- 🧹 **进程跟随应用退出**：正常退出会终止 Node 服务器；Windows 额外使用
+  `taskkill /T /F` 和 kill-on-close Job Object，应用崩溃或被强杀时也能由系统清理进程树
 - 🔗 **外链交给系统浏览器**：回答/设置里的外部链接用系统默认浏览器打开（opener 插件 +
   面向回环地址的 remote capability），配置文件用系统默认编辑器打开
 - 🧩 **内置插件商城**：预装社区 `dshmarket`，可在设置中搜索、安装、更新、停用和卸载
   DSH 社区插件；同时内置私有 pnpm，最终用户无需另外配置包管理器
 - 📦 **自包含分发**：内置 Node.js 运行时 + 裁剪过的 DSH 运行环境，对方无需安装任何东西
 - ⚙️ **可配置**：内置资源 / 配置文件 / 环境变量 / 命令行参数四级优先级
+- 🔄 **应用内更新**：启动后静默检查，也可在设置中手动检查、下载并安装签名更新
 - 🔄 **跟随上游**：发布脚本从 DSH 官方仓库拉取源码构建，可固定 tag/分支，随上游更新
 
 ## 环境要求
@@ -34,8 +38,8 @@ DSH，本仓库提供的是桌面封装、自包含打包与自动化发布（�
 
 | 要求 | 说明 |
 | --- | --- |
-| 操作系统 | Windows 10/11 x64 |
-| WebView2 运行时 | 安装包自动检测/安装（Win11 一般自带），无需手动处理 |
+| 操作系统 | Windows 10/11、macOS、Linux（CI 使用 Ubuntu 22.04 构建） |
+| 系统 WebView | Windows 使用 WebView2（NSIS 安装包处理运行时）；macOS 使用系统 WebKit；Linux 使用 WebKitGTK |
 | Node.js | **不需要**（安装包内置 node 运行时） |
 | pnpm | **不需要**（安装包内置仅供 DSH 插件管理使用的私有 pnpm） |
 | DSH 源码 | **不需要**（内置裁剪过的 DSH 运行环境） |
@@ -44,30 +48,36 @@ DSH，本仓库提供的是桌面封装、自包含打包与自动化发布（�
 
 | 依赖 | 版本要求 | 用途 |
 | --- | --- | --- |
-| 操作系统 | Windows 10/11 x64 | 打包 NSIS 安装包 |
-| Node.js | ≥ 22 | 运行发布脚本 / 内置运行时来源 |
-| pnpm | 与仓库 lockfile 匹配 | 依赖安装与 deploy |
-| Rust | stable（MSVC target） | 编译 Tauri 壳 |
-| VS Build Tools | C++ 工作负载 | Rust 链接（link.exe） |
-| `@tauri-apps/cli` | ≥ 2 | tauri 打包 |
+| 操作系统 | 与目标平台一致 | 脚本在当前系统生成 NSIS、DMG/`.app` 或 DEB/AppImage，不做跨平台编译 |
+| Node.js | ≥ 22（CI 使用 24） | 运行发布脚本 / 内置运行时来源 |
+| pnpm | 11.7.0（CI） | DSH 依赖安装与 deploy |
+| Rust | stable | 编译 Tauri 壳 |
+| 平台构建工具 | Windows: VS Build Tools C++；macOS: Xcode Command Line Tools；Linux: WebKitGTK/GTK 等 | 原生编译和打包 |
+| `@tauri-apps/cli` | ≥ 2 | Tauri 打包 |
 | git | 任意 | 远程源码拉取 |
 
 > 构建机需要有 Node（发布脚本会从它复制核心文件进安装包）；**运行环境的用户则不需要**。
 
 ## 快速开始
 
-- **已安装**：双击桌面/开始菜单的「DSH Desktop」即可。
-- **安装包**：`src-tauri/target/release/bundle/nsis/DSH Desktop_*_x64-setup.exe`
-- **绿色版**：`src-tauri/target/release/dsh-desktop.exe`，需连同旁边的 `dsh/`、`node/`
-  目录一起拷贝（这俩是内置运行时）。
+从 [GitHub Releases](https://github.com/314857493/dsh-desktop/releases) 下载当前系统的产物：
+
+- **Windows**：运行 NSIS `*-setup.exe`。
+- **macOS**：打开 `.dmg`，将 DSH Desktop 拖入「应用程序」。
+- **Linux**：安装 `.deb`，或给 `.AppImage` 添加执行权限后直接运行。
+
+安装后打开「DSH Desktop」即可。Windows 还保留了
+`launch-dsh-desktop.cmd` 作为本地绿色版启动器：它要求 `dsh-desktop.exe`、`dsh/`
+和 `node/` 位于同一目录。
 
 ## 两种分发形态
 
 ### 1. 自包含版（给别人用，推荐）
 
-安装包内**内置**了 Node.js 运行时（`node-runtime/` → 安装后 `node/`）和精简的 DSH
-运行环境（`rt/` → 安装后 `dsh/`，已裁剪源码/map/类型/孤儿依赖，约 200 MB）。
-对方**无需安装任何东西**，装完双击即用；实际安装包体积随内置 DSH 与商城版本变化。
+各平台安装包都**内置** Node.js 运行时（`node-runtime/` → 包内 `node/`）和
+精简的 DSH 运行环境（`rt/` → 包内 `dsh/`），并预置商城种子和私有 pnpm。
+发布脚本会裁剪 source map、类型/源码与未引用孤儿依赖；最终用户不需要
+另行安装 Node.js、npm 或 pnpm，产物体积会随内置 DSH 与商城版本变化。
 
 ### 2. 源码版（本机/开发者用）
 
@@ -77,7 +87,8 @@ DSH，本仓库提供的是桌面封装、自包含打包与自动化发布（�
   资源时报错并提示配置）；也可指向 `release.mjs` 拉取并构建好的
   `repo-cache/deepseek-harness/`。需已构建过 `pnpm run build`
   （或至少 `build:lib` + `build:web`），目录下需有 `apps/cli/lib/bin.js`（或 `lib/bin.js`）。
-- **Node.js ≥ 22**：从 PATH、fnm 安装目录或标准位置自动探测，也可配置指定。
+- **Node.js ≥ 22**：优先从 PATH 自动探测；Windows 还会检查 fnm 与标准安装目录，
+  也可在配置中显式指定。
 
 ## 配置
 
@@ -88,7 +99,7 @@ DSH，本仓库提供的是桌面封装、自包含打包与自动化发布（�
 ```json
 {
   "dsh_root": "<DSH 源码目录，如 release.mjs 拉取的 repo-cache/deepseek-harness>",
-  "node": "<node.exe 绝对路径（可选，默认自动探测）>",
+  "node": "<node 可执行文件的绝对路径（可选，默认自动探测）>",
   "dsh_home": "<DSH_HOME 数据目录（可选，默认 ~/.dsh-desktop）>"
 }
 ```
@@ -102,10 +113,10 @@ DSH，本仓库提供的是桌面封装、自包含打包与自动化发布（�
 | 变量 | 含义 |
 | --- | --- |
 | `DSH_DESKTOP_DSH_ROOT` | DSH 运行环境 / 源码目录 |
-| `DSH_DESKTOP_NODE` | node.exe 绝对路径 |
+| `DSH_DESKTOP_NODE` | node 可执行文件的绝对路径 |
 | `DSH_DESKTOP_HOME` | DSH_HOME（默认 `~/.dsh-desktop`，与浏览器 GUI 的 `~/.dsh` 隔离） |
 
-命令行参数：`dsh-desktop.exe --dsh-root <path> [--node <path>] [--home <path>]`
+命令行参数：`dsh-desktop[.exe] --dsh-root <path> [--node <path>] [--home <path>]`
 
 > **数据目录隔离**：桌面应用默认使用独立的 `~/.dsh-desktop`，避免与同时运行的
 > 浏览器 GUI 实例写同一个会话导致日志损坏（DSH 要求每会话单一写者）。
@@ -132,39 +143,45 @@ DSH，本仓库提供的是桌面封装、自包含打包与自动化发布（�
 ## 构建 / 发布（全自动）
 
 ```bash
-# 一键发布（默认从远程 GitHub 获取 DSH 源码 → 构建 → 打包，全自动、跨平台）
+# 本地开发打包（默认从 GitHub 获取 DSH 源码；不生成 updater 签名产物）
+node scripts/release.mjs --no-updater
+
+# 正式打包（需先在环境中设置 TAURI_SIGNING_PRIVATE_KEY）
 node scripts/release.mjs
 
 # 指定远程引用（tag / 分支 / commit）
-node scripts/release.mjs --ref dsh-v0.1.0-rc.8
+node scripts/release.mjs --ref <tag-or-commit>
 
 # 用本地 clone（不联网）：已构建则跳过 install/build，直接打包（最快路径）
-node scripts/release.mjs --local
-node scripts/release.mjs --repo <本地 DSH 源码路径>
-node scripts/release.mjs --local --rebuild-repo   # 本地源码重新构建后再打包
+node scripts/release.mjs --repo <本地 DSH 源码路径> --no-updater
+node scripts/release.mjs --repo <本地 DSH 源码路径> --rebuild-repo --no-updater
+# 也可设置 DSH_DESKTOP_REPO 后使用 --local
 
 # 自定义远程地址 / 发布后静默安装（Windows）/ 跳过冒烟测试 / 指定产物版本号
 node scripts/release.mjs --remote-url <url>
 node scripts/release.mjs --install
 node scripts/release.mjs --skip-boot-test
 node scripts/release.mjs --no-updater       # 开发机测试安装包；不需要 updater 私钥
-node scripts/release.mjs --version 0.1.9   # 产物版本号（同步 Tauri + Cargo 元数据，v 前缀自动去掉）
+node scripts/release.mjs --version <semver>   # 同步 Tauri + Cargo 元数据，v 前缀自动去掉
 ```
 
 > **开发机测试打包**：`--no-updater` 仍会执行运行时准备、冒烟测试和平台安装包构建，
 > 但通过 `src-tauri/tauri.no-updater.conf.json` 临时关闭 updater 产物，不生成 `.sig`，
 > 因此 Windows、macOS 和 Ubuntu 开发机都不需要持有 updater 私钥。正式发布不要使用该参数。
+未使用 `--no-updater` 时，脚本若找不到 `TAURI_SIGNING_PRIVATE_KEY` 会直接失败，
+避免误发布无法被已安装客户端验证的更新。
 
 > **产物版本号**：GitHub Actions 打 `v*` tag 发布时自动把 tag 名作为版本号
-> （`v0.1.4` → 安装包 `DSH Desktop_0.1.4_x64-setup.exe`）；本地/手动触发不传则
+> （`vX.Y.Z` → 安装包 `DSH Desktop_X.Y.Z_x64-setup.exe`）；本地/手动触发不传则
 > 使用仓库里 tauri.conf.json 的版本。
 
 远程源码缓存在 `repo-cache/deepseek-harness/`（浅克隆，后续运行增量 fetch，不触碰
 本机开发用的 checkout）。
 
-**内置 Node / pnpm 运行时**：`release.mjs` 会从系统 Node 安装中复制核心运行时到
-`node-runtime/`，再从 registry 固定安装 `pnpm@11.22.0` 作为应用私有的插件包管理器；
-不会把构建机全局安装的 npm 包带进安装包。最终用户无需安装 Node、npm 或 pnpm。
+**内置 Node / pnpm 运行时**：`release.mjs` 会从构建机正在使用的 Node 安装中
+复制当前平台的 node 可执行文件和必要文件到 `node-runtime/`，再从 registry
+固定安装 `pnpm@11.22.0` 作为应用私有的插件包管理器。构建机全局安装的 npm
+包不会被复制进安装包。
 
 ### 两种源码来源
 
@@ -180,16 +197,16 @@ node scripts/release.mjs --version 0.1.9   # 产物版本号（同步 Tauri + Ca
 2. `pnpm run build`（远程克隆只有源码，lib/dist 不被 git 跟踪，必须构建）
 3. `pnpm deploy` 从 DSH 仓库生成自包含运行时 `rt/`
 4. `patch-runtime` 补齐 pnpm deploy 剪掉的运行时依赖
-5. `ensure node-runtime` 从系统 Node 复制核心运行时
+5. `ensure node-runtime` 从系统 Node 复制当前平台的核心运行时文件
 6. `bundle-marketplace` 解析并预置构建时的 `dshmarket@latest` 离线种子（实际版本写入
    种子 manifest），同时固定预置私有 `pnpm@11.22.0`
 7. 放入 `ensure-fallback.mjs` 与商城 profile 安装/迁移脚本
 8. `trim-runtime` 裁剪 map/类型/源码
 9. `prune-rt` **自动扫描**：依赖闭包 + 运行时代码引用扫描，删除确无引用的孤儿包
-   （旧安装包自动备份到 `backup-pre-prune/`；被引用/未声明的运行时依赖如 tsx 自动保留）
+   （被移除的包会转移到 `backup-pre-prune/`；Windows 还会先备份上一个 NSIS 安装包）
 10. `boot-test` 运行时与商城冒烟测试（起服务器、检查商城路由和私有 pnpm）
-11. `tauri build` 产出安装包
-12. Linux 构建额外签署 `.deb` updater 产物
+11. `tauri build` 按当前系统生成 NSIS、DMG/`.app` 或 DEB/AppImage
+12. 正式 Linux 构建额外校验 `.deb.sig` 已生成
 
 > 每次发布都会**重新自动扫描**依赖：DSH 源码更新后，新依赖自动保留、
 > 新垃圾自动裁剪，无需手动维护清单。
@@ -199,15 +216,16 @@ node scripts/release.mjs --version 0.1.9   # 产物版本号（同步 Tauri + Ca
 仓库内置两个工作流：
 
 - **CI**（`.github/workflows/ci.yml`）：push/PR 时校验脚本语法、空白、无机器路径。
-- **Release**（`.github/workflows/release.yml`）：每小时第 17 分钟检查上游 Release；发现
-  新的 `dsh-v*` 版本后固定 tag/commit，依次发布每个尚未处理的版本。Windows、macOS、
-  Linux 全部构建成功后，才更新版本文件、`CHANGELOG.md`、`.dsh-upstream.json`，并上传
-  安装包、签名更新包、带真实更新说明的 `latest.json` 和 GitHub Release。
+- **Release**（`.github/workflows/release.yml`）：每天 02:17 UTC（上海时间 10:17）
+  检查上游 Release；发现新的 `dsh-v*` 版本后固定 tag/commit，每次处理一个
+  尚未发布的版本。Windows、macOS、Linux 全部构建成功后，才更新版本文件、
+  `CHANGELOG.md`、`.dsh-upstream.json`，并上传安装包、签名更新包、
+  带真实更新说明的 `latest.json` 和 GitHub Release。
 
 定时发布通过 `concurrency` 串行执行；如果 changelog 提交成功后附件上传中断，下次检查会
 识别不完整 Release 并用同一版本重试。手动推送 `v*` tag 和 Actions 页面手动构建仍然可用。
-`.dsh-upstream.json` 记录当前桌面端 v0.1.8 实际内置的 `dsh-v0.1.0-rc.7`，因此
-`dsh-v0.1.0-rc.8` 会作为首个待处理上游版本发布。
+手动运行默认只保存 Actions 产物，启用 `publish` 才会发布 Release。
+`.dsh-upstream.json` 记录最近已处理的上游 tag/commit 和对应桌面版本。
 
 自动发版需要仓库 Settings → Actions → General 中的 Workflow permissions 允许读写内容；
 如果 `main` 有分支保护，还需允许 `github-actions[bot]` 写入发布元数据提交，否则构建完成后
@@ -268,8 +286,15 @@ open "/Applications/DSH Desktop.app"
 
 ### 产物
 
-- 安装包：`src-tauri/target/release/bundle/nsis/DSH Desktop_*_x64-setup.exe`
-- 绿色版：`src-tauri/target/release/dsh-desktop.exe` + `dsh/` + `node/` 目录
+| 平台 | 本地打包产物 |
+| --- | --- |
+| Windows | `src-tauri/target/release/bundle/nsis/*-setup.exe` |
+| macOS | `src-tauri/target/release/bundle/dmg/*.dmg` 和 `bundle/macos/*.app` |
+| Linux | `src-tauri/target/release/bundle/deb/*.deb` 和 `bundle/appimage/*.AppImage` |
+
+正式签名构建还会生成 updater 用的 `.sig`；macOS updater 使用
+`bundle/macos/*.app.tar.gz` 及其签名。`updater-manifest.mjs` 会为各平台生成片段并合并为
+`latest.json`，同时按 GitHub Release 的资产命名规则将文件名空格规范化为点号。
 
 ## 工作原理
 
@@ -279,11 +304,12 @@ open "/Applications/DSH Desktop.app"
    解析到包；再把商城离线种子安装成 `web` profile 自己的依赖，并写入默认禁用内部重启的
    profile 策略，同时尊重用户设置、已有更新版本和后续卸载选择。
 3. 以 `web --host 127.0.0.1 --port 0` 启动服务器（端口由 OS 分配，避免冲突），
-   并把内置 node 目录加到子进程 PATH；子进程 `CREATE_NO_WINDOW` 静默运行。
+   并把内置 node 目录加到子进程 PATH；Windows 上以 `CREATE_NO_WINDOW` 静默运行。
 4. 读取子进程 stdout，捕获 `dsh web: http://127.0.0.1:<port>` 就绪行后，
    把 WebView 导航到该地址。
-5. 退出时 `taskkill /T /F` 杀掉服务器进程树；同时子进程挂 Windows Job Object
-   kill-on-close——app 无论怎么退出（关窗/崩溃/强杀），服务器都会被清理。
+5. 退出时终止服务器并等待回收；Windows 使用 `taskkill /T /F` 和
+   kill-on-close Job Object 清理整个进程树，macOS/Linux 向服务器子进程发送 `kill`。
+6. 单实例插件阻止启动第二个实例；重复打开应用时只显示并聚焦现有窗口。
 
 **外链打开**：DSH 前端把外部链接渲染为 `target="_blank"`；opener 插件注入的
 脚本拦截点击并调用 Tauri IPC 让系统默认浏览器打开。由于页面地址是
@@ -307,6 +333,7 @@ dsh-desktop/
 ├── scripts/
 │   ├── release.mjs            # 一键发布（远程/本地，13 步）
 │   ├── release-metadata.mjs   # 上游检测、版本递增、changelog / Release Notes
+│   ├── updater-manifest.mjs   # 生成/合并跨平台 latest.json
 │   ├── patch-runtime.mjs      # 补齐 deploy 剪掉的运行时依赖
 │   ├── bundle-marketplace.mjs # 打包最新版社区商城种子 + 固定版私有 pnpm
 │   ├── trim-runtime.mjs       # 裁剪 map/类型/源码
@@ -350,4 +377,5 @@ dsh-desktop/
   ```
 
   也可换成其他已注册的 progid（VS Code 一般为 `VSCode.yaml`，记事本为 `txtfile`）。
-- **回滚**：`backup-pre-prune/` 下有历史安装包与裁剪前的完整 `rt/`。
+- **恢复误裁剪的依赖**：`backup-pre-prune/` 保存 `prune-rt` 移出的包；Windows
+  打包时还会保存上一个 NSIS 安装包。
