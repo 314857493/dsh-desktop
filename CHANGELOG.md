@@ -8,6 +8,23 @@ DeepSeek Harness 上游版本，以便复现构建和排查兼容性问题。
 
 ## [Unreleased]
 
+## [0.1.13] - 2026-08-23
+
+### 桌面端
+
+- 无桌面壳代码变更；此版本用于同步上游 DeepSeek Harness。
+
+### 内置 DeepSeek Harness
+
+- 版本：`dsh-v0.1.1-rc.1` → `dsh-v0.1.1-rc.2`
+- Commit：`b150a551b8d465e31e418e1b2eaf5e79bbb7d28e`
+- [上游 Release Notes](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.1-rc.2)
+
+#### 体验优化
+
+* DeepSeek 适配器支持优先通过 Files API 上传图像，并可复用已上传文件
+* 优化图像预处理流程：根据模型要求自动缩放并转换为合适格式
+
 ## [0.1.12] - 2026-08-22
 
 ### 桌面端
@@ -281,5 +298,7 @@ DeepSeek Harness 上游版本，以便复现构建和排查兼容性问题。
 
 [0.1.11]: https://github.com/314857493/dsh-desktop/compare/v0.1.10...v0.1.11
 
-[Unreleased]: https://github.com/314857493/dsh-desktop/compare/v0.1.12...HEAD
 [0.1.12]: https://github.com/314857493/dsh-desktop/compare/v0.1.11...v0.1.12
+
+[Unreleased]: https://github.com/314857493/dsh-desktop/compare/v0.1.13...HEAD
+[0.1.13]: https://github.com/314857493/dsh-desktop/compare/v0.1.12...v0.1.13
