@@ -6,6 +6,9 @@ on:
   pull_request:
 
 permissions:
+  # rustsec/audit-check publishes its informational findings as a separate
+  # Check Run on push events. Keep every other permission read-only.
+  checks: write
   contents: read
 
 jobs:
