@@ -1,0 +1,85 @@
+name: Dependabot Auto-merge
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+
+# This workflow never checks out or executes pull-request code. It only merges
+# a verified, single-commit Dependabot patch after the exact CI run succeeds.
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  merge-patch-update:
+    if: >-
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.pull_requests[0].number != null
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Verify eligibility and enable squash auto-merge
+        env:
+          BASE_REF: ${{ github.event.workflow_run.pull_requests[0].base.ref }}
+          GH_TOKEN: ${{ github.token }}
+          PR_HEAD_SHA: ${{ github.event.workflow_run.pull_requests[0].head.sha }}
+          PR_NUMBER: ${{ github.event.workflow_run.pull_requests[0].number }}
+          REPOSITORY: ${{ github.repository }}
+          TESTED_BASE_SHA: ${{ github.event.workflow_run.pull_requests[0].base.sha }}
+        run: |
+          set -euo pipefail
+
+          pr_json="$(gh api "repos/$REPOSITORY/pulls/$PR_NUMBER")"
+          pr_author="$(jq -r '.user.login' <<<"$pr_json")"
+          pr_base="$(jq -r '.base.ref' <<<"$pr_json")"
+          pr_head="$(jq -r '.head.sha' <<<"$pr_json")"
+          pr_head_repo="$(jq -r '.head.repo.full_name' <<<"$pr_json")"
+          pr_state="$(jq -r '.state' <<<"$pr_json")"
+          pr_commits="$(jq -r '.commits' <<<"$pr_json")"
+          pr_url="$(jq -r '.html_url' <<<"$pr_json")"
+
+          if [[ "$pr_author" != 'dependabot[bot]' ||
+                "$pr_base" != 'main' ||
+                "$BASE_REF" != 'main' ||
+                "$pr_head_repo" != "$REPOSITORY" ||
+                "$pr_head" != "$PR_HEAD_SHA" ||
+                "$pr_state" != 'open' ||
+                "$pr_commits" != '1' ]]; then
+            echo 'Not an eligible single-commit Dependabot PR; skipping.'
+            exit 0
+          fi
+
+          current_base_sha="$(
+            gh api "repos/$REPOSITORY/git/ref/heads/$BASE_REF" --jq '.object.sha'
+          )"
+          if [[ "$current_base_sha" != "$TESTED_BASE_SHA" ]]; then
+            echo 'The base branch changed after CI started; skipping stale results.'
+            exit 0
+          fi
+
+          commit_json="$(gh api "repos/$REPOSITORY/commits/$PR_HEAD_SHA")"
+          commit_author="$(jq -r '.author.login // ""' <<<"$commit_json")"
+          commit_verified="$(jq -r '.commit.verification.verified' <<<"$commit_json")"
+          commit_message="$(jq -r '.commit.message' <<<"$commit_json")"
+          if [[ "$commit_author" != 'dependabot[bot]' ||
+                "$commit_verified" != 'true' ]]; then
+            echo 'Dependabot commit identity or signature verification failed; skipping.'
+            exit 0
+          fi
+
+          update_types="$(
+            sed -n 's/^[[:space:]]*update-type:[[:space:]]*//p' <<<"$commit_message"
+          )"
+          if [[ -z "$update_types" ]]; then
+            echo 'No Dependabot update metadata found; skipping.'
+            exit 0
+          fi
+          if grep -Evqx 'version-update:semver-patch' <<<"$update_types"; then
+            echo 'Minor or major update detected; keeping the PR for manual review.'
+            exit 0
+          fi
+
+          gh pr merge --auto --squash \
+            --match-head-commit "$PR_HEAD_SHA" \
+            "$pr_url"
