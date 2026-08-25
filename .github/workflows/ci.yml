@@ -57,6 +57,13 @@ jobs:
       - name: Test release scripts
         run: node --test scripts/*.test.mjs
 
+      - name: Prepare generated Tauri resource directories
+        # The release pipeline populates these ignored directories before
+        # packaging. Tauri's build script still validates resource paths while
+        # Clippy/tests compile metadata in a clean checkout, so empty stubs are
+        # the correct CI inputs for code-only Rust checks.
+        run: mkdir -p rt node-runtime
+
       - name: Check Rust formatting
         run: cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
 

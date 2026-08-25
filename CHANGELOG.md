@@ -17,6 +17,7 @@ DeepSeek Harness 上游版本，以便复现构建和排查兼容性问题。
 
 ### 工程质量
 
+- CI 的 Rust 检查会先创建被忽略的 Tauri 运行时资源目录，保证干净 checkout 下 Clippy 与测试不会因缺少 `rt/`、`node-runtime/` 而误报失败。
 - CI 新增 Rust 格式、Clippy、测试与 RustSec 审计，并启用 Cargo / GitHub Actions Dependabot 更新。
 
 ## [0.1.13] - 2026-08-23
