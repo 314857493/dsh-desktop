@@ -12,6 +12,8 @@
  *   node scripts/release.mjs --skip-boot-test         # skip the runtime smoke test
  *   node scripts/release.mjs --no-updater              # test package; do not require/sign updater artifacts
  *   node scripts/release.mjs --version 0.1.4          # stamp the bundle version (Tauri + Cargo metadata)
+ *   node scripts/release.mjs --prepare-only           # build runtime without signing credentials
+ *   node scripts/release.mjs --package-only           # package an already-prepared runtime
  *
  * Pipeline (remote mode): fetch -> pnpm install -> pnpm build -> pnpm deploy
  *           -> patch-runtime -> node/pnpm runtime -> bundled marketplace
@@ -26,6 +28,7 @@ import { fileURLToPath } from 'node:url'
 
 const IS_WIN = process.platform === 'win32'
 const NODE_BIN = IS_WIN ? 'node.exe' : 'node'
+const TAURI_CLI_VERSION = '2.11.4'
 
 // Ensure the Rust toolchain is reachable (rustup default location) for tauri build.
 const cargoBin = join(homedir(), '.cargo', 'bin')
@@ -36,9 +39,6 @@ if (existsSync(cargoExe) && !process.env.PATH.split(delimiter).includes(cargoBin
 
 const here = dirname(fileURLToPath(import.meta.url))
 const project = join(here, '..')
-const rt = join(project, 'rt')
-const nodeRuntime = join(project, 'node-runtime')
-const backupDir = join(project, 'backup-pre-prune')
 const stamp = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14)
 
 const args = process.argv.slice(2)
@@ -51,17 +51,24 @@ const REBUILD = flag('--rebuild-repo')
 const INSTALL = flag('--install')
 const SKIP_BOOT = flag('--skip-boot-test')
 const NO_UPDATER = flag('--no-updater')
+const PREPARE_ONLY = flag('--prepare-only')
+const PACKAGE_ONLY = flag('--package-only')
 const USE_LOCAL = flag('--local') || args.includes('--repo')
 const repoArg = value('--repo')
 const projectArg = value('--project')
 const REMOTE_URL = value('--remote-url') ?? 'https://github.com/deepseek-ai/deepseek-harness.git'
 const REF = (value('--ref') ?? process.env.DSH_DESKTOP_UPSTREAM_REF ?? '').trim() || 'master'
 const PROJECT = projectArg ?? project
+const nodeRuntime = join(PROJECT, 'node-runtime')
+
+if (PREPARE_ONLY && PACKAGE_ONLY) {
+  fail('--prepare-only 与 --package-only 不能同时使用')
+}
 
 // Formal builds must sign updater artifacts. Development machines can still
 // exercise the complete runtime + installer pipeline with --no-updater; that
 // mode merges a small config override and emits ordinary installers only.
-if (!NO_UPDATER) {
+if (!NO_UPDATER && !PREPARE_ONLY) {
   const signingKey = process.env.TAURI_SIGNING_PRIVATE_KEY?.trim()
   if (!signingKey) {
     fail(
@@ -154,7 +161,12 @@ function fetchRemote() {
   return cacheDir
 }
 
-if (USE_LOCAL) {
+if (PACKAGE_ONLY) {
+  // Packaging consumes only the prepared rt/ and node-runtime/ directories.
+  // Do not fetch, inspect, or execute upstream source in the signing phase.
+  REPO = cacheDir
+  console.log('mode: PACKAGE ONLY (using prepared runtime; upstream source is not executed)')
+} else if (USE_LOCAL) {
   REPO = repoArg ?? process.env.DSH_DESKTOP_REPO ?? ''
   if (!REPO) fail('--local 模式需要指定源码路径：--repo <路径> 或环境变量 DSH_DESKTOP_REPO')
   console.log(`mode: LOCAL checkout ${REPO} (use --remote or drop --local to fetch from the remote)`)
@@ -256,6 +268,7 @@ function ensureNodeRuntime() {
 
 const rtDir = join(PROJECT, 'rt')
 const backup = join(PROJECT, 'backup-pre-prune')
+const bundleRoot = join(PROJECT, 'src-tauri', 'target', 'release', 'bundle')
 
 function step(name) { console.log(`\n========== ${name} ==========`) }
 function fail(msg) { console.error(`FAILED: ${msg}`); process.exit(1) }
@@ -273,105 +286,131 @@ function runNode(label, script, scriptArgs = []) {
   if (r.status !== 0) fail(`${label} failed (exit ${r.status})`)
 }
 
-/** Run the Tauri CLI, using the globally installed binary or an npx fallback. */
+/** Run the pinned Tauri CLI, using a matching global binary or an npx fallback. */
 function runTauri(label, tauriArgs) {
   // Windows needs a shell to resolve npm's `.cmd` shims. On Unix, using a
   // shell would re-parse individual arguments and split bundle paths that
   // contain spaces (for example `DSH Desktop_0.1.6_amd64.deb`).
-  const direct = spawnSync('tauri', tauriArgs, { stdio: 'inherit', shell: IS_WIN, cwd: PROJECT })
-  console.log(`[tauri] status=${direct.status} signal=${direct.signal}`)
-  if (direct.status === 0) return
+  const probe = spawnSync('tauri', ['--version'], { encoding: 'utf8', shell: IS_WIN, cwd: PROJECT })
+  const directVersion = probe.status === 0
+    ? probe.stdout?.trim().match(/\d+\.\d+\.\d+/)?.[0]
+    : undefined
+  if (directVersion === TAURI_CLI_VERSION) {
+    const direct = spawnSync('tauri', tauriArgs, { stdio: 'inherit', shell: IS_WIN, cwd: PROJECT })
+    console.log(`[tauri@${directVersion}] status=${direct.status} signal=${direct.signal}`)
+    if (direct.status === 0) return
+  } else if (directVersion !== undefined) {
+    console.log(`tauri CLI ${directVersion} does not match pinned ${TAURI_CLI_VERSION}`)
+  }
 
-  console.log('tauri CLI not on PATH or failed — falling back to npx @tauri-apps/cli')
+  console.log(`using npx @tauri-apps/cli@${TAURI_CLI_VERSION}`)
   const fallback = spawnSync(
     'npx',
-    ['--yes', '@tauri-apps/cli', ...tauriArgs],
+    ['--yes', `@tauri-apps/cli@${TAURI_CLI_VERSION}`, ...tauriArgs],
     { stdio: 'inherit', shell: IS_WIN, cwd: PROJECT },
   )
   console.log(`[npx] status=${fallback.status} signal=${fallback.signal}`)
   if (fallback.status !== 0) fail(`${label} failed (exit ${fallback.status})`)
 }
 
-if (!existsSync(join(REPO, 'package.json'))) fail(`DSH repo not found: ${REPO}`)
 if (!existsSync(join(PROJECT, 'src-tauri', 'tauri.conf.json'))) fail(`project not found: ${PROJECT}`)
+if (PACKAGE_ONLY) {
+  if (!existsSync(join(rtDir, 'package.json'))) fail(`prepared DSH runtime not found: ${rtDir}`)
+  if (!existsSync(join(nodeRuntime, NODE_BIN))) fail(`prepared Node runtime not found: ${nodeRuntime}`)
+} else if (!existsSync(join(REPO, 'package.json'))) {
+  fail(`DSH repo not found: ${REPO}`)
+}
 
 // ---------- 0. install deps + build the DSH source ----------
 // Remote clones carry source only (lib/dist are not git-tracked), so they
 // must be installed and built before deploy. Local checkouts may already be
 // built; pass --rebuild-repo to force.
-if (USE_LOCAL) {
-  if (REBUILD) {
-    step('0/13 rebuild DSH repo (pnpm run build)')
-    run('repo build', 'pnpm', ['run', 'build'], { cwd: REPO })
+if (!PACKAGE_ONLY) {
+  if (USE_LOCAL) {
+    if (REBUILD) {
+      step('0/13 rebuild DSH repo (pnpm run build)')
+      run('repo build', 'pnpm', ['run', 'build'], { cwd: REPO })
+    } else {
+      console.log(`skip repo rebuild (using current build artifacts in ${REPO}); add --rebuild-repo for a fully fresh release`)
+    }
   } else {
-    console.log(`skip repo rebuild (using current build artifacts in ${REPO}); add --rebuild-repo for a fully fresh release`)
+    step('1/13 pnpm install (frozen lockfile)')
+    // confirmModulesPurge=false: pnpm aborts a full node_modules purge without
+    // a TTY unless CI=true; the release pipeline is non-interactive by design.
+    run('pnpm install', 'pnpm', ['install', '--frozen-lockfile', '--config.confirmModulesPurge=false'], { cwd: REPO })
+    step('2/13 build DSH repo (pnpm run build)')
+    run('repo build', 'pnpm', ['run', 'build'], { cwd: REPO })
   }
-} else {
-  step('1/13 pnpm install (frozen lockfile)')
-  // confirmModulesPurge=false: pnpm aborts a full node_modules purge without
-  // a TTY unless CI=true; the release pipeline is non-interactive by design.
-  run('pnpm install', 'pnpm', ['install', '--frozen-lockfile', '--config.confirmModulesPurge=false'], { cwd: REPO })
-  step('2/13 build DSH repo (pnpm run build)')
-  run('repo build', 'pnpm', ['run', 'build'], { cwd: REPO })
-}
 
-// ---------- 1. pnpm deploy -> rt ----------
-step('3/13 pnpm deploy -> rt')
-if (existsSync(rtDir)) {
-  console.log('cleaning old rt...')
-  rmSync(rtDir, { recursive: true, force: true })
-}
-run('pnpm deploy', 'pnpm', ['--filter', '@deepseek-ai/dsh', 'deploy', '--legacy', '--config.node-linker=hoisted', rtDir], { cwd: REPO })
+  // ---------- 1. pnpm deploy -> rt ----------
+  step('3/13 pnpm deploy -> rt')
+  if (existsSync(rtDir)) {
+    console.log('cleaning old rt...')
+    rmSync(rtDir, { recursive: true, force: true })
+  }
+  run('pnpm deploy', 'pnpm', ['--filter', '@deepseek-ai/dsh', 'deploy', '--legacy', '--config.node-linker=hoisted', rtDir], { cwd: REPO })
 
-// ---------- 2. patch runtime deps ----------
-step('4/13 patch-runtime (restore runtime-needed devDeps)')
-runNode('patch-runtime', join(here, 'patch-runtime.mjs'), [rtDir, REPO])
+  // ---------- 2. patch runtime deps ----------
+  step('4/13 patch-runtime (restore runtime-needed devDeps)')
+  runNode('patch-runtime', join(here, 'patch-runtime.mjs'), [rtDir, REPO])
 
-// ---------- 3. ensure node + private package manager runtime ----------
-step('5/13 ensure node-runtime (copy core Node from system)')
-ensureNodeRuntime()
+  // ---------- 3. ensure node + private package manager runtime ----------
+  step('5/13 ensure node-runtime (copy core Node from system)')
+  ensureNodeRuntime()
 
-// ---------- 4. marketplace ----------
-step('6/13 bundle plugin marketplace and private pnpm')
-runNode('bundle-marketplace', join(here, 'bundle-marketplace.mjs'), [rtDir, nodeRuntime])
+  // ---------- 4. marketplace ----------
+  step('6/13 bundle plugin marketplace and private pnpm')
+  runNode('bundle-marketplace', join(here, 'bundle-marketplace.mjs'), [rtDir, nodeRuntime])
 
-// ---------- 5. startup migrations ----------
-step('7/13 install runtime preparation scripts')
-mkdirSync(join(rtDir, 'scripts'), { recursive: true })
-copyFileSync(join(here, 'ensure-fallback.mjs'), join(rtDir, 'scripts', 'ensure-fallback.mjs'))
-copyFileSync(join(here, 'ensure-marketplace.mjs'), join(rtDir, 'scripts', 'ensure-marketplace.mjs'))
+  // ---------- 5. startup migrations ----------
+  step('7/13 install runtime preparation scripts')
+  mkdirSync(join(rtDir, 'scripts'), { recursive: true })
+  copyFileSync(join(here, 'ensure-fallback.mjs'), join(rtDir, 'scripts', 'ensure-fallback.mjs'))
+  copyFileSync(join(here, 'ensure-marketplace.mjs'), join(rtDir, 'scripts', 'ensure-marketplace.mjs'))
 
-// ---------- 6. trim maps/types/sources ----------
-step('8/13 trim-runtime (strip maps/d.ts/sources)')
-runNode('trim-runtime', join(here, 'trim-runtime.mjs'), [rtDir])
+  // ---------- 6. trim maps/types/sources ----------
+  step('8/13 trim-runtime (strip maps/d.ts/sources)')
+  runNode('trim-runtime', join(here, 'trim-runtime.mjs'), [rtDir])
 
-// ---------- 7. prune orphan deps (back up the previous installer first) ----------
-step('9/13 prune-rt (remove runtime-unneeded orphan deps)')
-if (IS_WIN) {
-  const nsisDir = join(PROJECT, 'src-tauri', 'target', 'release', 'bundle', 'nsis')
-  const installers = existsSync(nsisDir) ? readdirSync(nsisDir).filter((f) => f.endsWith('-setup.exe')).map((f) => join(nsisDir, f)) : []
-  if (installers.length > 0) {
-    mkdirSync(backup, { recursive: true })
-    const bk = join(backup, `setup-${stamp}.exe`)
-    copyFileSync(installers[0], bk)
-    console.log(`previous installer backed up: ${bk}`)
+  // ---------- 7. prune orphan deps (back up the previous installer first) ----------
+  step('9/13 prune-rt (remove runtime-unneeded orphan deps)')
+  if (IS_WIN) {
+    const nsisDir = join(PROJECT, 'src-tauri', 'target', 'release', 'bundle', 'nsis')
+    const installers = existsSync(nsisDir) ? readdirSync(nsisDir).filter((f) => f.endsWith('-setup.exe')).map((f) => join(nsisDir, f)) : []
+    if (installers.length > 0) {
+      mkdirSync(backup, { recursive: true })
+      const bk = join(backup, `setup-${stamp}.exe`)
+      copyFileSync(installers[0], bk)
+      console.log(`previous installer backed up: ${bk}`)
+    }
+  }
+  runNode('prune-rt', join(here, 'prune-rt.mjs'), [rtDir, backup])
+
+  // ---------- 8. runtime smoke test ----------
+  if (!SKIP_BOOT) {
+    step('10/13 boot-test (runtime + marketplace smoke test)')
+    const nodeExe = join(nodeRuntime, NODE_BIN)
+    const testHome = join(PROJECT, `.dsh-boot-test-${stamp}`)
+    runNode('boot-test', join(here, 'boot-test.mjs'), [nodeExe, rtDir, testHome])
+    rmSync(testHome, { recursive: true, force: true })
+  } else {
+    console.log('skipping smoke test (--skip-boot-test)')
   }
 }
-runNode('prune-rt', join(here, 'prune-rt.mjs'), [rtDir, backup])
 
-// ---------- 8. runtime smoke test ----------
-if (!SKIP_BOOT) {
-  step('10/13 boot-test (runtime + marketplace smoke test)')
-  const nodeExe = join(nodeRuntime, NODE_BIN)
-  const testHome = join(PROJECT, `.dsh-boot-test-${stamp}`)
-  runNode('boot-test', join(here, 'boot-test.mjs'), [nodeExe, rtDir, testHome])
-  rmSync(testHome, { recursive: true, force: true })
-} else {
-  console.log('skipping smoke test (--skip-boot-test)')
+if (PREPARE_ONLY) {
+  console.log('\n================ RUNTIME PREPARED ================')
+  console.log(`runtime : ${rtDir}`)
+  console.log(`node    : ${nodeRuntime}`)
+  process.exit(0)
 }
 
 // ---------- 9. build ----------
 step('11/13 tauri build')
+if (existsSync(bundleRoot)) {
+  console.log(`cleaning stale bundle output: ${bundleRoot}`)
+  rmSync(bundleRoot, { recursive: true, force: true })
+}
 if (process.platform === 'darwin') {
   // GitHub Actions exposes missing secrets as present-but-empty environment
   // variables. Tauri treats an empty APPLE_CERTIFICATE as configured and
@@ -441,7 +480,6 @@ if (process.platform === 'linux' && !NO_UPDATER) {
 
 // ---------- report ----------
 // Locate the produced distributable(s) for this platform.
-const bundleRoot = join(PROJECT, 'src-tauri', 'target', 'release', 'bundle')
 const artifactGlobs = IS_WIN
   ? ['nsis/*-setup.exe']
   : process.platform === 'darwin'

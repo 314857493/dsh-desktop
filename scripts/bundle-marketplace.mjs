@@ -30,11 +30,17 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
+import {
+  MARKETPLACE_PACKAGE,
+  MARKETPLACE_TAG,
+  resolveMarketplaceRelease,
+} from './marketplace-release.mjs'
 
-export const MARKETPLACE_PACKAGE = 'dshmarket'
-export const MARKETPLACE_SPEC = 'latest'
+export { MARKETPLACE_PACKAGE }
+export const MARKETPLACE_SPEC = MARKETPLACE_TAG
 export const MARKETPLACE_SEED_DIR = 'marketplace-seed'
-export const PNPM_VERSION = '11.22.0'
+export const PNPM_VERSION = '11.23.0'
+export const PNPM_INTEGRITY = 'sha512-8ACC5bKDoZm3Tgedoo0VXACP4jL0TIoG6n3foBTs9xn8Ni95DsxnsoEG3awq+yTEmpoHkVnaVgss59Hpjv0Rrw=='
 
 function fail(message) {
   throw new Error(`bundle-marketplace: ${message}`)
@@ -86,11 +92,11 @@ function copyNestedClosure(sourceModules, ownerDir, roots) {
   return [...copied]
 }
 
-function installStage(stage) {
+function installStage(stage, marketplaceRelease) {
   writeFileSync(join(stage, 'package.json'), `${JSON.stringify({
     private: true,
     dependencies: {
-      [MARKETPLACE_PACKAGE]: MARKETPLACE_SPEC,
+      [MARKETPLACE_PACKAGE]: marketplaceRelease.version,
       pnpm: PNPM_VERSION,
     },
   }, null, 2)}\n`)
@@ -100,6 +106,7 @@ function installStage(stage) {
     '--dir', stage,
     '--prod',
     '--ignore-scripts',
+    `--registry=${marketplaceRelease.registry}`,
     '--config.auto-install-peers=false',
     '--config.node-linker=hoisted',
     '--config.minimum-release-age=0',
@@ -109,6 +116,16 @@ function installStage(stage) {
   })
   if (result.error !== undefined) fail(`could not start pnpm: ${result.error.message}`)
   if (result.status !== 0) fail(`staging install failed (exit ${result.status ?? 1})`)
+
+  const lockfile = readFileSync(join(stage, 'pnpm-lock.yaml'), 'utf8')
+  if (!lockfileHasExpectedIntegrities(lockfile, marketplaceRelease.integrity)) {
+    fail('integrity mismatch for resolved marketplace or pinned pnpm package')
+  }
+}
+
+export function lockfileHasExpectedIntegrities(lockfile, marketplaceIntegrity) {
+  return lockfile.includes(`integrity: ${marketplaceIntegrity}`) &&
+    lockfile.includes(`integrity: ${PNPM_INTEGRITY}`)
 }
 
 function removeLegacyInstalledMarketplace(runtimeDir) {
@@ -125,7 +142,7 @@ function removeLegacyInstalledMarketplace(runtimeDir) {
   }
 }
 
-function installMarketplace(stageModules, runtimeDir) {
+function installMarketplace(stageModules, runtimeDir, marketplaceRelease) {
   removeLegacyInstalledMarketplace(runtimeDir)
 
   const seedDir = join(runtimeDir, MARKETPLACE_SEED_DIR)
@@ -136,6 +153,9 @@ function installMarketplace(stageModules, runtimeDir) {
   const resolvedVersion = manifest.version
   if (typeof resolvedVersion !== 'string' || resolvedVersion.trim() === '') {
     fail(`resolved ${MARKETPLACE_PACKAGE} package has no version`)
+  }
+  if (resolvedVersion !== marketplaceRelease.version) {
+    fail(`resolved ${MARKETPLACE_PACKAGE}@${resolvedVersion}, expected ${marketplaceRelease.version}`)
   }
   const nested = copyNestedClosure(
     stageModules,
@@ -151,6 +171,8 @@ function installMarketplace(stageModules, runtimeDir) {
     package: MARKETPLACE_PACKAGE,
     requested: MARKETPLACE_SPEC,
     version: resolvedVersion,
+    integrity: marketplaceRelease.integrity,
+    registry: marketplaceRelease.registry,
   }, null, 2)}\n`)
   return { marketDir, nested, resolvedVersion }
 }
@@ -181,7 +203,7 @@ function installPnpm(stageModules, nodeRuntimeDir) {
   }
 }
 
-export function bundleMarketplace(runtimeDir, nodeRuntimeDir) {
+export async function bundleMarketplace(runtimeDir, nodeRuntimeDir) {
   if (!existsSync(join(runtimeDir, 'package.json'))) {
     fail(`DSH runtime is missing: ${runtimeDir}`)
   }
@@ -191,13 +213,14 @@ export function bundleMarketplace(runtimeDir, nodeRuntimeDir) {
 
   const stage = mkdtempSync(join(tmpdir(), 'dsh-desktop-marketplace-'))
   try {
-    installStage(stage)
+    const marketplaceRelease = await resolveMarketplaceRelease()
+    installStage(stage, marketplaceRelease)
     const stageModules = join(stage, 'node_modules')
-    const market = installMarketplace(stageModules, runtimeDir)
+    const market = installMarketplace(stageModules, runtimeDir, marketplaceRelease)
     installPnpm(stageModules, nodeRuntimeDir)
     console.log(
       `bundle-marketplace: ${MARKETPLACE_PACKAGE}@${market.resolvedVersion} ` +
-      `(resolved from ${MARKETPLACE_SPEC}); ` +
+      `(resolved once from ${MARKETPLACE_SPEC}); ` +
       `pnpm@${PNPM_VERSION}; nested deps: ${market.nested.join(', ') || '(none)'}`,
     )
   } finally {
@@ -209,7 +232,7 @@ const invokedPath = process.argv[1] === undefined ? '' : fileURLToPath(import.me
 if (invokedPath !== '' && realpathSync(process.argv[1]) === realpathSync(invokedPath)) {
   const here = dirname(fileURLToPath(import.meta.url))
   const project = join(here, '..')
-  bundleMarketplace(
+  await bundleMarketplace(
     process.argv[2] ?? join(project, 'rt'),
     process.argv[3] ?? join(project, 'node-runtime'),
   )

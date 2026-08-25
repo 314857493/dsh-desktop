@@ -30,7 +30,7 @@ This project does **not modify the DSH core** — the agent loop, tool calling, 
 
 | Requirement | Notes |
 | --- | --- |
-| OS | Windows 10/11, macOS, or Linux (CI builds on Ubuntu 22.04) |
+| OS | Windows 10/11 x64, macOS Apple Silicon (arm64), or Linux x86_64/amd64 |
 | System webview | WebView2 on Windows (handled by the NSIS installer), system WebKit on macOS, and WebKitGTK on Linux |
 | Node.js | **Not needed** (bundled with the installer) |
 | pnpm | **Not needed** (a private copy used only for DSH plugin management is bundled) |
@@ -41,11 +41,11 @@ This project does **not modify the DSH core** — the agent loop, tool calling, 
 | Dependency | Version | Purpose |
 | --- | --- | --- |
 | OS | same as the target platform | The script produces NSIS, DMG/`.app`, or DEB/AppImage on the current OS; it does not cross-compile |
-| Node.js | ≥ 22 (CI uses 24) | Runs the release scripts / source for the bundled runtime |
+| Node.js | ≥ 22 (CI pins 24.19.0) | Runs the release scripts / source for the bundled runtime |
 | pnpm | 11.7.0 in CI | DSH dependency install and deploy |
-| Rust | stable | compiles the Tauri shell |
+| Rust | 1.97.1 | compiles, formats, and lints the Tauri shell |
 | Platform build tools | Windows: VS Build Tools C++; macOS: Xcode Command Line Tools; Linux: WebKitGTK/GTK packages | native compilation and packaging |
-| `@tauri-apps/cli` | ≥ 2 | Tauri packaging |
+| `@tauri-apps/cli` | 2.11.4 | Tauri packaging |
 | git | any | remote source fetch |
 
 > The build machine needs Node (the release script copies core files from it into the installer); **end users do not**.
@@ -54,9 +54,9 @@ This project does **not modify the DSH core** — the agent loop, tool calling, 
 
 Download the artifact for your system from [GitHub Releases](https://github.com/314857493/dsh-desktop/releases):
 
-- **Windows**: run the NSIS `*-setup.exe`.
-- **macOS**: open the `.dmg` and drag DSH Desktop to Applications.
-- **Linux**: install the `.deb`, or make the `.AppImage` executable and run it.
+- **Windows x64**: run the NSIS `*-setup.exe`.
+- **macOS Apple Silicon (arm64)**: open the `.dmg` and drag DSH Desktop to Applications.
+- **Linux x86_64/amd64**: install the `.deb`, or make the `.AppImage` executable and run it.
 
 Then open "DSH Desktop." Windows also retains `launch-dsh-desktop.cmd` as a local portable-build launcher; it expects `dsh-desktop.exe`, `dsh/`, and `node/` in the same directory.
 
@@ -103,7 +103,7 @@ CLI args: `dsh-desktop[.exe] --dsh-root <path> [--node <path>] [--home <path>]`
 
 ## Plugin Market
 
-Self-contained builds preinstall the latest registry release available at build time of the open-source community plugin
+Self-contained builds preinstall a pinned, integrity-checked release of the open-source community plugin
 [`dshmarket`](https://github.com/dsh-market/dsh-market). Open **Settings → Plugin Market**
 to browse and search the community catalog, install plugins with confirmation, and manage updates,
 disablement, or removal. All operations run in the local DSH process. The desktop bundle carries a
@@ -144,6 +144,8 @@ node scripts/release.mjs --install
 node scripts/release.mjs --skip-boot-test
 node scripts/release.mjs --no-updater       # test installer on a dev machine; no updater key required
 node scripts/release.mjs --version <semver>   # syncs Tauri + Cargo metadata; a leading `v` is stripped
+node scripts/release.mjs --prepare-only      # build, trim, and test the runtime without signing keys
+node scripts/release.mjs --package-only      # package an existing rt/ and node-runtime/ only
 ```
 
 > **Development packaging**: `--no-updater` still prepares the runtime, runs the
@@ -162,7 +164,7 @@ node scripts/release.mjs --version <semver>   # syncs Tauri + Cargo metadata; a 
 
 Remote source is cached in `repo-cache/deepseek-harness/` (shallow clone; subsequent runs do an incremental fetch and never touch your local dev checkout).
 
-**Bundled Node / pnpm runtime**: `release.mjs` copies the current platform's node executable and required files from the Node installation used by the build machine into `node-runtime/`, then stages pinned `pnpm@11.22.0` from the registry as the app-private plugin package manager. Globally installed packages from the build machine are never copied.
+**Bundled Node / pnpm runtime**: `release.mjs` copies the current platform's node executable and required files from the Node installation used by the build machine into `node-runtime/`, then stages pinned `pnpm@11.23.0` from the registry as the app-private plugin package manager. Globally installed packages from the build machine are never copied.
 
 ### Two source modes
 
@@ -179,8 +181,11 @@ Remote source is cached in `repo-cache/deepseek-harness/` (shallow clone; subseq
 3. `pnpm deploy` generates the self-contained runtime `rt/` from the DSH repo
 4. `patch-runtime` restores runtime-needed deps that pnpm deploy pruned
 5. `ensure node-runtime` copies the current platform's core runtime files from the system Node installation
-6. `bundle-marketplace` resolves and bundles an offline build-time `dshmarket@latest` seed
-   (recording the exact version in the seed manifest) and pins private `pnpm@11.22.0`
+6. `bundle-marketplace` resolves `dshmarket@latest` once at the start of the build, then
+   installs that exact version from the same official registry and verifies its npm tarball
+   integrity (recording the version, integrity, and registry in the seed manifest); all three
+   platforms share that resolution, while private
+   `pnpm@11.23.0` remains pinned
 7. installs the fallback and market profile install/migration scripts
 8. `trim-runtime` strips maps/types/sources
 9. `prune-rt` **auto-scans**: dependency closure + reference scan over runtime code, removing orphan packages with no references
@@ -197,7 +202,10 @@ At 02:17 UTC each day (10:17 Asia/Shanghai), the release workflow checks upstrea
 releases and processes one unseen `dsh-v*` version. It pins the exact tag and commit, then builds Windows,
 macOS, and Linux bundles. Only after every platform succeeds does it update the checked-in
 versions, `CHANGELOG.md`, and `.dsh-upstream.json`, then publish signed updater artifacts,
-a `latest.json` manifest containing real update notes, and the GitHub Release. Runs are
+a `latest.json` manifest containing real update notes, `SHA256SUMS`, and the GitHub Release.
+Upstream install/build/smoke-test work runs on a credential-free runner; a short-lived runtime
+artifact is handed to a separate signing runner that alone can access updater and Apple signing
+credentials. Runs are
 serialized, and an interrupted release with missing assets is retried with the same version.
 Pushing a `v*` tag and manual Actions builds remain supported. Manual runs store Actions
 artifacts by default and publish a GitHub Release only when `publish` is enabled.
@@ -265,7 +273,8 @@ signed release is the preferred long-term fix.
 Formal signed builds also produce updater `.sig` files; the macOS updater uses
 `bundle/macos/*.app.tar.gz` and its signature. `updater-manifest.mjs` creates the
 per-platform fragments and merges them into `latest.json`, normalizing spaces in
-asset file names to dots to match GitHub Release asset naming.
+asset file names to dots to match GitHub Release asset naming. `release-checksums.mjs`
+generates `SHA256SUMS` for the assets that are actually uploaded.
 
 ## How It Works
 
@@ -294,8 +303,11 @@ dsh-desktop/
 │   ├── release.mjs            # one-command release (remote/local, 13 steps)
 │   ├── release-metadata.mjs   # upstream detection, version bump, changelog / release notes
 │   ├── updater-manifest.mjs   # creates/merges cross-platform latest.json metadata
+│   ├── release-checksums.mjs  # creates SHA-256 checksums for published assets
+│   ├── prepared-runtime.mjs   # validates the CI runtime artifact before signing
 │   ├── patch-runtime.mjs      # restores runtime-needed deps pruned by deploy
-│   ├── bundle-marketplace.mjs # bundles latest community market seed + pinned private pnpm
+│   ├── marketplace-release.mjs # resolves market latest to one version + integrity
+│   ├── bundle-marketplace.mjs # bundles the resolved, integrity-checked seed + private pnpm
 │   ├── trim-runtime.mjs       # strips maps/types/sources
 │   ├── prune-rt.mjs           # auto orphan-dep pruning (closure + reference scan)
 │   ├── ensure-fallback.mjs    # links bundled packages into DSH_HOME at launch
@@ -308,10 +320,18 @@ dsh-desktop/
 ├── launch-dsh-desktop.cmd # portable launcher
 ├── .dsh-upstream.json     # last processed upstream tag/commit and desktop version
 ├── CHANGELOG.md           # desktop and bundled-DSH release history
+├── LICENSE                # MIT license for the desktop shell
+├── THIRD_PARTY_NOTICES.md # bundled third-party component notices
 └── README.md
 ```
 
 > `rt/`, `node-runtime/`, `repo-cache/`, `backup-pre-prune/` are local generated/cache directories and are not committed (see `.gitignore`); run `node scripts/release.mjs` after cloning to build the artifacts.
+
+## License
+
+The DSH Desktop shell is released under the [MIT License](LICENSE). Bundled DeepSeek Harness,
+Node.js, pnpm, dshmarket, and other dependencies remain under their respective licenses; see
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for the primary components.
 
 ## Troubleshooting
 

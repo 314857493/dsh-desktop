@@ -90,7 +90,7 @@ test('release pipeline reads CI metadata from the environment before packaging',
     const result = spawnSync(process.execPath, [
       join(scriptsDir, 'release.mjs'),
       '--project', project,
-      '--no-updater',
+      '--prepare-only',
       '--remote-url', join(project, 'missing-upstream'),
     ], {
       encoding: 'utf8',
@@ -105,6 +105,35 @@ test('release pipeline reads CI metadata from the environment before packaging',
     assert.equal(JSON.parse(readFileSync(join(project, 'src-tauri', 'tauri.conf.json'))).version, '0.1.9')
     assert.match(readFileSync(join(project, 'src-tauri', 'Cargo.toml'), 'utf8'), /^version = "0\.1\.9"$/m)
     assert.match(readFileSync(join(project, 'src-tauri', 'Cargo.lock'), 'utf8'), /version = "0\.1\.9"/)
+  } finally {
+    rmSync(project, { recursive: true, force: true })
+  }
+})
+
+test('package-only phase never resolves or executes upstream source', () => {
+  const project = mkdtempSync(join(tmpdir(), 'dsh-release-package-only-'))
+  try {
+    mkdirSync(join(project, 'src-tauri'), { recursive: true })
+    writeFileSync(join(project, 'src-tauri', 'tauri.conf.json'), '{\n  "version": "0.1.13"\n}\n')
+    writeFileSync(join(project, 'src-tauri', 'Cargo.toml'), '[package]\nname = "dsh-desktop"\nversion = "0.1.13"\n')
+    writeFileSync(join(project, 'src-tauri', 'Cargo.lock'), '[[package]]\nname = "dsh-desktop"\nversion = "0.1.13"\n')
+
+    const result = spawnSync(process.execPath, [
+      join(scriptsDir, 'release.mjs'),
+      '--project', project,
+      '--package-only',
+      '--remote-url', join(project, 'missing-upstream'),
+    ], {
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        TAURI_SIGNING_PRIVATE_KEY: 'test-only-key',
+      },
+    })
+    const output = `${result.stdout}\n${result.stderr}`
+    assert.notEqual(result.status, 0)
+    assert.match(output, /prepared DSH runtime not found/)
+    assert.doesNotMatch(output, /无法解析远程引用|git clone|pnpm install/)
   } finally {
     rmSync(project, { recursive: true, force: true })
   }

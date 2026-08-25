@@ -765,9 +765,7 @@ fn spawn_server(
     node: &Path,
     dsh_home: String,
 ) -> Result<Child, String> {
-    if let Err(message) = run_ensure_fallback(node, root, Some(&dsh_home)) {
-        return Err(message);
-    }
+    run_ensure_fallback(node, root, Some(&dsh_home))?;
     if let Err(message) = run_ensure_marketplace(node, root, &dsh_home) {
         log(&format!(
             "[marketplace] optional preparation failed: {message}"

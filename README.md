@@ -38,7 +38,7 @@ DSH，本仓库提供的是桌面封装、自包含打包与自动化发布（�
 
 | 要求 | 说明 |
 | --- | --- |
-| 操作系统 | Windows 10/11、macOS、Linux（CI 使用 Ubuntu 22.04 构建） |
+| 操作系统 | Windows 10/11 x64、macOS Apple Silicon（arm64）、Linux x86_64/amd64 |
 | 系统 WebView | Windows 使用 WebView2（NSIS 安装包处理运行时）；macOS 使用系统 WebKit；Linux 使用 WebKitGTK |
 | Node.js | **不需要**（安装包内置 node 运行时） |
 | pnpm | **不需要**（安装包内置仅供 DSH 插件管理使用的私有 pnpm） |
@@ -49,11 +49,11 @@ DSH，本仓库提供的是桌面封装、自包含打包与自动化发布（�
 | 依赖 | 版本要求 | 用途 |
 | --- | --- | --- |
 | 操作系统 | 与目标平台一致 | 脚本在当前系统生成 NSIS、DMG/`.app` 或 DEB/AppImage，不做跨平台编译 |
-| Node.js | ≥ 22（CI 使用 24） | 运行发布脚本 / 内置运行时来源 |
+| Node.js | ≥ 22（CI 固定 24.19.0） | 运行发布脚本 / 内置运行时来源 |
 | pnpm | 11.7.0（CI） | DSH 依赖安装与 deploy |
-| Rust | stable | 编译 Tauri 壳 |
+| Rust | 1.97.1 | 编译 Tauri 壳、运行格式与 Clippy 检查 |
 | 平台构建工具 | Windows: VS Build Tools C++；macOS: Xcode Command Line Tools；Linux: WebKitGTK/GTK 等 | 原生编译和打包 |
-| `@tauri-apps/cli` | ≥ 2 | Tauri 打包 |
+| `@tauri-apps/cli` | 2.11.4 | Tauri 打包 |
 | git | 任意 | 远程源码拉取 |
 
 > 构建机需要有 Node（发布脚本会从它复制核心文件进安装包）；**运行环境的用户则不需要**。
@@ -62,9 +62,9 @@ DSH，本仓库提供的是桌面封装、自包含打包与自动化发布（�
 
 从 [GitHub Releases](https://github.com/314857493/dsh-desktop/releases) 下载当前系统的产物：
 
-- **Windows**：运行 NSIS `*-setup.exe`。
-- **macOS**：打开 `.dmg`，将 DSH Desktop 拖入「应用程序」。
-- **Linux**：安装 `.deb`，或给 `.AppImage` 添加执行权限后直接运行。
+- **Windows x64**：运行 NSIS `*-setup.exe`。
+- **macOS Apple Silicon（arm64）**：打开 `.dmg`，将 DSH Desktop 拖入「应用程序」。
+- **Linux x86_64/amd64**：安装 `.deb`，或给 `.AppImage` 添加执行权限后直接运行。
 
 安装后打开「DSH Desktop」即可。Windows 还保留了
 `launch-dsh-desktop.cmd` 作为本地绿色版启动器：它要求 `dsh-desktop.exe`、`dsh/`
@@ -125,7 +125,7 @@ DSH，本仓库提供的是桌面封装、自包含打包与自动化发布（�
 
 ## 插件商城
 
-自包含安装包预装发布构建时最新版的开源社区插件
+自包含安装包预装发布配置中固定并校验完整性的开源社区插件
 [`dshmarket`](https://github.com/dsh-market/dsh-market)。打开 **设置 → 插件商城** 即可
 浏览社区目录、搜索并一键安装插件，也可以在已安装列表中更新、停用或卸载。商城和安装操作
 都在本机 DSH 进程内完成；桌面端附带固定版本的私有 pnpm，不依赖系统 Node、npm 或 pnpm。
@@ -163,6 +163,8 @@ node scripts/release.mjs --install
 node scripts/release.mjs --skip-boot-test
 node scripts/release.mjs --no-updater       # 开发机测试安装包；不需要 updater 私钥
 node scripts/release.mjs --version <semver>   # 同步 Tauri + Cargo 元数据，v 前缀自动去掉
+node scripts/release.mjs --prepare-only      # 仅构建、裁剪并验证运行时，不接触签名密钥
+node scripts/release.mjs --package-only      # 仅打包已准备好的 rt/ 和 node-runtime/
 ```
 
 > **开发机测试打包**：`--no-updater` 仍会执行运行时准备、冒烟测试和平台安装包构建，
@@ -180,7 +182,7 @@ node scripts/release.mjs --version <semver>   # 同步 Tauri + Cargo 元数据�
 
 **内置 Node / pnpm 运行时**：`release.mjs` 会从构建机正在使用的 Node 安装中
 复制当前平台的 node 可执行文件和必要文件到 `node-runtime/`，再从 registry
-固定安装 `pnpm@11.22.0` 作为应用私有的插件包管理器。构建机全局安装的 npm
+固定安装 `pnpm@11.23.0` 作为应用私有的插件包管理器。构建机全局安装的 npm
 包不会被复制进安装包。
 
 ### 两种源码来源
@@ -198,8 +200,10 @@ node scripts/release.mjs --version <semver>   # 同步 Tauri + Cargo 元数据�
 3. `pnpm deploy` 从 DSH 仓库生成自包含运行时 `rt/`
 4. `patch-runtime` 补齐 pnpm deploy 剪掉的运行时依赖
 5. `ensure node-runtime` 从系统 Node 复制当前平台的核心运行时文件
-6. `bundle-marketplace` 解析并预置构建时的 `dshmarket@latest` 离线种子（实际版本写入
-   种子 manifest），同时固定预置私有 `pnpm@11.22.0`
+6. `bundle-marketplace` 在构建开始时解析一次 `dshmarket@latest`，随后用解析出的精确
+   版本和 npm tarball integrity 从同一个官方 registry 安装离线种子（实际版本、integrity
+   与 registry 写入种子 manifest）；
+   三个平台共享同一次解析结果，同时固定预置私有 `pnpm@11.23.0`
 7. 放入 `ensure-fallback.mjs` 与商城 profile 安装/迁移脚本
 8. `trim-runtime` 裁剪 map/类型/源码
 9. `prune-rt` **自动扫描**：依赖闭包 + 运行时代码引用扫描，删除确无引用的孤儿包
@@ -220,7 +224,9 @@ node scripts/release.mjs --version <semver>   # 同步 Tauri + Cargo 元数据�
   检查上游 Release；发现新的 `dsh-v*` 版本后固定 tag/commit，每次处理一个
   尚未发布的版本。Windows、macOS、Linux 全部构建成功后，才更新版本文件、
   `CHANGELOG.md`、`.dsh-upstream.json`，并上传安装包、签名更新包、
-  带真实更新说明的 `latest.json` 和 GitHub Release。
+  带真实更新说明的 `latest.json`、`SHA256SUMS` 和 GitHub Release。上游依赖安装、
+  构建和运行时冒烟测试位于无密钥 runner；准备好的运行时通过短期 artifact 交给独立
+  签名 runner，只有后者能读取 updater / Apple 签名凭据。
 
 定时发布通过 `concurrency` 串行执行；如果 changelog 提交成功后附件上传中断，下次检查会
 识别不完整 Release 并用同一版本重试。手动推送 `v*` tag 和 Actions 页面手动构建仍然可用。
@@ -294,7 +300,8 @@ open "/Applications/DSH Desktop.app"
 
 正式签名构建还会生成 updater 用的 `.sig`；macOS updater 使用
 `bundle/macos/*.app.tar.gz` 及其签名。`updater-manifest.mjs` 会为各平台生成片段并合并为
-`latest.json`，同时按 GitHub Release 的资产命名规则将文件名空格规范化为点号。
+`latest.json`，同时按 GitHub Release 的资产命名规则将文件名空格规范化为点号；
+`release-checksums.mjs` 会为实际上传的资产生成 `SHA256SUMS`。
 
 ## 工作原理
 
@@ -334,8 +341,11 @@ dsh-desktop/
 │   ├── release.mjs            # 一键发布（远程/本地，13 步）
 │   ├── release-metadata.mjs   # 上游检测、版本递增、changelog / Release Notes
 │   ├── updater-manifest.mjs   # 生成/合并跨平台 latest.json
+│   ├── release-checksums.mjs  # 为实际发布资产生成 SHA-256 清单
+│   ├── prepared-runtime.mjs   # 校验 CI 运行时 artifact 后再移入签名工作区
 │   ├── patch-runtime.mjs      # 补齐 deploy 剪掉的运行时依赖
-│   ├── bundle-marketplace.mjs # 打包最新版社区商城种子 + 固定版私有 pnpm
+│   ├── marketplace-release.mjs # 解析一次商城 latest 的版本与 integrity
+│   ├── bundle-marketplace.mjs # 打包已解析且校验完整性的商城种子 + 私有 pnpm
 │   ├── trim-runtime.mjs       # 裁剪 map/类型/源码
 │   ├── prune-rt.mjs           # 孤儿依赖自动裁剪（闭包 + 引用扫描）
 │   ├── ensure-fallback.mjs    # 启动时链接内置包到 DSH_HOME
@@ -348,11 +358,19 @@ dsh-desktop/
 ├── launch-dsh-desktop.cmd # 绿色版启动器
 ├── .dsh-upstream.json     # 已处理的上游 tag/commit 与桌面版本
 ├── CHANGELOG.md           # 桌面端与内置 DSH 的版本记录
+├── LICENSE                # 桌面壳 MIT 许可证
+├── THIRD_PARTY_NOTICES.md # 内置第三方软件声明
 └── README.md
 ```
 
 > `rt/`、`node-runtime/`、`repo-cache/`、`backup-pre-prune/` 为本地生成/缓存目录，
 > 不入库（见 `.gitignore`）；克隆后跑 `node scripts/release.mjs` 即可构建产物。
+
+## 许可证
+
+DSH Desktop 桌面壳使用 [MIT License](LICENSE)。安装包内置的 DeepSeek Harness、
+Node.js、pnpm、dshmarket 和其他依赖仍遵循各自许可证，主要组件见
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
 
 ## 故障排查
 
