@@ -20,7 +20,17 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": {
+        "default-src": "'self' customprotocol: asset:",
+        "connect-src": "'self' ipc: http://ipc.localhost",
+        "img-src": "'self' asset: http://asset.localhost data:",
+        "style-src": "'self' 'unsafe-inline'",
+        "font-src": "'self' data:",
+        "object-src": "'none'",
+        "base-uri": "'none'",
+        "form-action": "'none'",
+        "frame-ancestors": "'none'"
+      }
     }
   },
   "bundle": {
@@ -42,7 +52,7 @@
     "shortDescription": "DeepSeek Harness 桌面启动器",
     "longDescription": "桌面壳：启动 DeepSeek Harness Web 服务器并在原生窗口中展示 GUI。",
     "category": "DeveloperTool",
-    "copyright": "MIT",
+    "copyright": "Copyright © 2026 DSH Desktop contributors",
     "windows": {
       "nsis": {
         "installMode": "currentUser",

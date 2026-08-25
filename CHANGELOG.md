@@ -8,6 +8,17 @@ DeepSeek Harness 上游版本，以便复现构建和排查兼容性问题。
 
 ## [Unreleased]
 
+### 安全与发布
+
+- 将无密钥的上游 DSH 运行时构建与安装包签名拆分到不同 CI runner；准备包先在隔离目录校验再移入签名工作区，避免上游构建脚本或归档覆盖路径接触 updater / Apple 签名凭据。
+- GitHub Actions 固定到完整 commit SHA，构建工具链固定到明确版本；商城在每次构建开始时解析一次 `latest`，三个平台共享同一精确版本并校验 npm tarball integrity。
+- 发布产物新增 `SHA256SUMS`，仓库补充 MIT `LICENSE` 与第三方组件声明。
+- 打包前清理旧 bundle 输出，并排除 Tauri 的 `rw.*.dmg` 临时镜像，防止本地重复构建误带旧安装包或 updater 产物。
+
+### 工程质量
+
+- CI 新增 Rust 格式、Clippy、测试与 RustSec 审计，并启用 Cargo / GitHub Actions Dependabot 更新。
+
 ## [0.1.13] - 2026-08-23
 
 ### 桌面端

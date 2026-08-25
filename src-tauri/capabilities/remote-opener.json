@@ -3,7 +3,7 @@
   "description": "Allow the loopback DSH web page (http://127.0.0.1) to open external links and use the desktop shell's in-app update commands. The DSH page is served over http://127.0.0.1:<port>, which Tauri treats as a remote origin, so these actions require an explicit capability. Installation is additionally gated by a cached signed-release check in Rust.",
   "windows": ["main"],
   "remote": {
-    "urls": ["http://127.0.0.1:*", "http://localhost:*"]
+    "urls": ["http://127.0.0.1:*"]
   },
   "permissions": [
     "opener:default",
