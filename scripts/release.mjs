@@ -369,6 +369,10 @@ if (!PACKAGE_ONLY) {
   copyFileSync(join(here, 'ensure-marketplace.mjs'), join(rtDir, 'scripts', 'ensure-marketplace.mjs'))
 
   // ---------- 6. trim maps/types/sources ----------
+  // pnpm deploy may leave workspace packages linked into the disposable source
+  // checkout. Materialize them before trimming so the source tree is untouched
+  // and the eventual `rt` archive is self-contained.
+  runNode('runtime-links', join(here, 'runtime-links.mjs'), [rtDir])
   step('8/13 trim-runtime (strip maps/d.ts/sources)')
   runNode('trim-runtime', join(here, 'trim-runtime.mjs'), [rtDir])
 
@@ -385,6 +389,9 @@ if (!PACKAGE_ONLY) {
     }
   }
   runNode('prune-rt', join(here, 'prune-rt.mjs'), [rtDir, backup])
+  // Pruning must not leave a link whose in-runtime target was removed. Re-run
+  // the portability check at the exact boundary that will be archived.
+  runNode('runtime-links', join(here, 'runtime-links.mjs'), [rtDir])
 
   // ---------- 8. runtime smoke test ----------
   if (!SKIP_BOOT) {

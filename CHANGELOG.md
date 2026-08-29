@@ -22,6 +22,8 @@ DeepSeek Harness 上游版本，以便复现构建和排查兼容性问题。
 - GitHub Actions 固定到完整 commit SHA，构建工具链固定到明确版本；商城在每次构建开始时解析一次 `latest`，三个平台共享同一精确版本并校验 npm tarball integrity。
 - 发布产物新增 `SHA256SUMS`，仓库补充 MIT `LICENSE` 与第三方组件声明。
 - 打包前清理旧 bundle 输出，并排除 Tauri 的 `rw.*.dmg` 临时镜像，防止本地重复构建误带旧安装包或 updater 产物。
+- 适配新版 DSH 的结构化 Web profile 模板与 token 登录握手，发布烟测会验证受保护的商城状态接口。
+- 归档前将 pnpm 指向上游源码 checkout 的 workspace 链接实体化，并再次校验 runtime 内所有链接可移植，避免三平台签名任务收到悬空资源。
 
 ### 工程质量
 
