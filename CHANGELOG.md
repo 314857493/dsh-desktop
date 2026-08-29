@@ -8,6 +8,8 @@ DeepSeek Harness 上游版本，以便复现构建和排查兼容性问题。
 
 ## [Unreleased]
 
+## [0.1.14] - 2026-08-29
+
 ### 桌面端
 
 - 启动 DSH 时通过桌面端受管的 `--patch` overlay 加载部署上下文插件，明确告诉模型
@@ -31,6 +33,76 @@ DeepSeek Harness 上游版本，以便复现构建和排查兼容性问题。
 - CI 新增 Rust 格式、Clippy、测试与 RustSec 审计，并启用 Cargo / GitHub Actions Dependabot 更新。
 - Dependabot 补丁级更新在 `main` 必需 CI 检查通过后自动 squash 合并；minor 与 major 更新仍保留人工审核。
 - CI 以最小 `checks: write` 权限发布 RustSec 检查结果，避免 `push` 事件在报告 informational advisories 时因 token 权限不足失败。
+
+### 内置 DeepSeek Harness
+
+- 版本：`dsh-v0.1.1-rc.2` → `dsh-v0.1.2-alpha.1`
+- Commit：`cd5ef8148158c3a752a658978873241fdf8e2bbc`
+- [上游 Release Notes](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.2-alpha.1)
+
+#### 新增功能
+
+* 会话流默认在每个已完成回答前折叠过程内容，并默认折叠的「System prompt」 @07akioni, @lsdsjy
+* 会话流正文宽度可自适应或拖拽调整 @yixiangihsiang
+* 会话流每个已完成回答后可展开查看精确 token 用量 @hypatiamay, @ZiyaZhang
+* 会话视图提供紧凑的回合导航 @LegGasai
+* 统一界面次级文字层级，会话流支持字号调节，Markdown 表格随正文字号缩放 @yixiangihsiang
+* 插件支持在模型设置页添加提供方登录配置 @LegGasai
+* 支持注册第三方语言，并补全多语言文本 @tianyicui, @LegGasai, @imccyu
+* 开启子代理模型选择后，Agent 可在授权范围内选择提供方、模型和推理力度 @Dudu-0223
+* 启动子代理时可指定提供方、模型、推理力度和最大输出长度 @pku-xht
+* Claude Code、Codex 子代理支持配置模型 @pku-xht
+* Python SDK runtime 新增 Windows x64 发行包 @tianyicui
+* ACP 补齐标准会话控制、模型设置、MCP、权限和取消能力 @tianyicui, @pku-xht
+* DeepSeek 官方适配器默认随请求提供已启用插件的包名和版本，可在配置中关闭 @tianyicui
+* DeepSeek 官方适配器新增可选的 Session 日志增量上传，默认关闭 @tianyicui
+
+#### 体验优化
+
+* 改善页面启动流程，减少代码加载次数和数据量开销 @lsdsjy
+* 改善会话初始化流程，减少数据传输解析开销，统一会话自有状态加载 @imccyu, @Kingwl, @kermanx
+* 改善会话记录占用的磁盘空间 @Magolor
+* 优化输入交互中的 `/` 与 `@` 菜单图标、目录加载、文件搜索 @Yifffan, @LegGasai
+* 会话运行中存在草稿时主按钮切换为「发送」，消息排队发送 @lsdsjy
+* 输入框中的文件和会话引用在相邻文字编辑后仍保持有效 @LegGasai
+* 切换会话后仍保留未提交的提问卡片草稿 @LegGasai
+* 会话流中的流式回复代码块在生成期间持续显示语法高亮 @07akioni
+* 会话流中的提问历史显示为可读的问答卡片，并标明取消或中断后的未提交状态 @LegGasai
+* 图片发送后立即显示，压缩和上传在后台继续 @CreatixChu
+* 上下文压缩会计入图片占用 @CreatixChu
+* 轨迹视图支持展示用户、助手和工具结果中的图片 @CreatixChu
+* 在本地文件系统模式下，模型可直接找到已上传图片的可读取位置 @CreatixChu
+* 调整图片压缩策略，压缩更快、上传体积更小，并改善超长截图的清晰度 @CreatixChu
+* 会话日志截断尾部自动修复时输出警告并注明受影响会话 @turtle1999
+
+#### 问题修复
+
+* 修复 macOS 和 Linux 上持久 PowerShell 启动过早、输出不完整的问题 @tianyicui
+* 修复 Linux 持久 Bash 在管道内部读取时提前返回空输出的问题 @LegGasai
+* 修复 Bash 命令派生大量子进程时 macOS 宿主卡顿的问题 @LegGasai
+* 修复 Windows 目录选择器截断含「开」等特定编码字符路径的问题 @tianyicui
+* 修复会话视图中持久 Bash 与 PowerShell 结果无法展开的问题 @LegGasai
+* 修复 Profile 配置的 Agent Preset 目录在启动时丢失的问题 @LegGasai
+* 无法加载的 Agent Preset 会提前标记，并在切换失败时说明原因 @LegGasai
+* Minimal preset 不再显示不适用的 `/goal` 命令 @Magolor
+* 文件编辑工具接受当前操作未使用字段的 `null` 占位值 @lsdsjy
+* PTC Mode 的 SDK 功能只能通过 `run_code` 调用，不再被模型当作普通工具直接调用 @CreatixChu
+* 网关定期发送 WebSocket 心跳，避免空闲连接中断 @lsdsjy
+* 修复新建空会话挤掉 Workspace 折叠列表已有会话的问题 @lsdsjy
+* 修复系统提示词 workflow 分区顺序 @LegGasai
+
+#### 其他变更
+
+* 更新 [安全说明](https://github.com/deepseek-ai/deepseek-harness/blob/dsh-v0.1.2-alpha.1/SAFETY.zh.md)：DeepSeek Harness 尚未接受安全审计，沙箱、审批与权限控制不能保证隔离 @turtle1999
+* 调整模型提示词顺序，使 Shell 使用指南稳定出现在其他工具指南之前 @LegGasai
+* 旧版调用接口 APIProxy 已迁移并移除，请统一使用 `@Remote` 网关 @imccyu
+* 会话视图工程大幅拆分，请面向诉求分层导入合适模块 @imccyu
+* 网络访问 Web 界面时启用链接中的一次性 token 认证鉴权 @tianyicui
+* 应用统一通过 `dsh` Profile 启动，包括 Python SDK、ACP 模式等 @tianyicui
+* pi-ai 模型支持更新，并增加 vLLM 思考预算等配置 @tianyicui
+* Headless 运行期间向 stderr 流式输出进度，stdout 只输出最终结果 @lsdsjy
+* Code Mode 统一更名为 PTC mode，现有会话记录仍可读取 @tianyicui
+* 默认启用公网 WebFetch（内置 SSRF 防护，公网请求不再逐次审批） @Dudu-0223
 
 ## [0.1.13] - 2026-08-23
 
@@ -324,5 +396,7 @@ DeepSeek Harness 上游版本，以便复现构建和排查兼容性问题。
 
 [0.1.12]: https://github.com/314857493/dsh-desktop/compare/v0.1.11...v0.1.12
 
-[Unreleased]: https://github.com/314857493/dsh-desktop/compare/v0.1.13...HEAD
 [0.1.13]: https://github.com/314857493/dsh-desktop/compare/v0.1.12...v0.1.13
+
+[Unreleased]: https://github.com/314857493/dsh-desktop/compare/v0.1.14...HEAD
+[0.1.14]: https://github.com/314857493/dsh-desktop/compare/v0.1.13...v0.1.14
