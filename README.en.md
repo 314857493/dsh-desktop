@@ -101,6 +101,14 @@ CLI args: `dsh-desktop[.exe] --dsh-root <path> [--node <path>] [--home <path>]`
 
 > **Data isolation**: the desktop app defaults to a dedicated `~/.dsh-desktop` to avoid corrupting session logs by writing the same session from two instances (DSH requires one live writer per session). To share history, set `dsh_home` to `~/.dsh` explicitly — but never let both instances process messages for the same session at the same time.
 
+The shell also contributes a deployment-context section to DSH's model prompt:
+`$DSH_HOME` is the authoritative root for Harness configuration and user data.
+It defaults to `~/.dsh-desktop` but always follows the overrides above. When the
+model locates `settings.yaml`, `cordis.patch.yml`, `profiles/`, `skills/`, or
+other managed files, it uses `$DSH_HOME` instead of assuming the browser GUI's
+`~/.dsh` or deriving a root from the current workspace. The Tauri shell's own
+`dsh-desktop.json` remains separate from Harness-managed configuration.
+
 ## Plugin Market
 
 Self-contained builds preinstall a pinned, integrity-checked release of the open-source community plugin
@@ -280,10 +288,11 @@ generates `SHA256SUMS` for the assets that are actually uploaded.
 
 1. The Rust shell resolves configuration (bundled `dsh/` + `node/` take precedence) and locates node and `lib/bin.js`.
 2. With the bundled runtime, it runs `ensure-fallback.mjs` to make shipped packages resolvable from the profile directory, then installs the offline market seed as a profile-owned dependency and applies a profile default that disables in-market restart, while preserving user settings, existing updates, and any later user uninstall.
-3. It starts the server with `web --host 127.0.0.1 --port 0` (OS-assigned port, avoiding conflicts) and prepends the bundled node dir to the child's PATH; on Windows, children run silently with `CREATE_NO_WINDOW`.
-4. It watches the child's stdout for the readiness line `dsh web: http://127.0.0.1:<port>` and navigates the WebView there.
-5. On exit it terminates and waits for the server. Windows uses `taskkill /T /F` plus a kill-on-close Job Object for the whole process tree; macOS/Linux sends `kill` to the server child.
-6. The single-instance plugin prevents a second app instance; launching again only shows and focuses the existing window.
+3. It materializes the embedded prompt-context plugin in the platform app cache and generates an absolute-path `--patch` overlay. The plugin only declares `$DSH_HOME` as authoritative; it does not edit the user's `AGENTS.md`, profile, or home-level `cordis.patch.yml`.
+4. It starts the server with `web --patch <overlay> --host 127.0.0.1 --port 0` (OS-assigned port, avoiding conflicts) and prepends the bundled node dir to the child's PATH; on Windows, children run silently with `CREATE_NO_WINDOW`.
+5. It watches the child's stdout for the readiness line `dsh web: http://127.0.0.1:<port>` and navigates the WebView there.
+6. On exit it terminates and waits for the server. Windows uses `taskkill /T /F` plus a kill-on-close Job Object for the whole process tree; macOS/Linux sends `kill` to the server child.
+7. The single-instance plugin prevents a second app instance; launching again only shows and focuses the existing window.
 
 **Opening external links**: the DSH frontend renders external links with `target="_blank"`; the opener plugin's injected script intercepts the click and calls the Tauri IPC so the system default browser opens the URL. Because the page lives at `http://127.0.0.1:<port>` (a remote origin from Tauri's point of view), the `capabilities/remote-opener.json` remote capability must allow `plugin:opener|open_url` — otherwise the ACL silently rejects the click and nothing happens.
 **Opening the config file**: goes through the DSH server's `settings.openDocument` → the OS default application (Windows relies on the `.yaml`/`.yml` file association — see Troubleshooting).
@@ -294,6 +303,7 @@ generates `SHA256SUMS` for the assets that are actually uploaded.
 dsh-desktop/
 ├── src-tauri/            # Tauri shell (Rust)
 │   ├── src/lib.rs        # config resolution / server launch / navigation / process cleanup
+│   ├── resources/        # desktop deployment-context plugin (embedded at compile time)
 │   ├── tauri.conf.json   # window, resources (rt→dsh, node-runtime→node, icon.ico)
 │   ├── capabilities/     # permissions: default + remote-opener (loopback URL may open external links)
 │   ├── nsis/hooks.nsh    # desktop shortcut on install (points at the standalone ico)
@@ -313,6 +323,7 @@ dsh-desktop/
 │   ├── ensure-fallback.mjs    # links bundled packages into DSH_HOME at launch
 │   ├── ensure-marketplace.mjs # installs/migrates profile market; preserves updates/uninstall
 │   ├── boot-test.mjs          # runtime + marketplace smoke test
+│   ├── dsh-desktop-context.test.mjs # deployment-context prompt contract test
 │   ├── gen-app-icon-svg.mjs   # generates icons from the official SVG (uses glyph-path.txt)
 │   ├── repair-session-log.mjs # session-log repair (rebuilds contiguous seq after dual-writer corruption)
 │   ├── test-open-document.mjs # e2e check of the open-config-file path (TEST_NODE/TEST_BIN point at a runtime)

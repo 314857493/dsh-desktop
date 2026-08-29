@@ -8,15 +8,17 @@
 //!      scripts: `ensure-fallback.mjs` makes shipped packages resolvable from
 //!      profiles, and `ensure-marketplace.mjs` installs the offline market seed
 //!      as a profile-owned plugin without overriding updates or later removal.
-//!   3. Spawn `node <root>/lib/bin.js web --host 127.0.0.1 --port 0`, adding
-//!      `--no-open` when supported, with the resolved environment (bundled node
-//!      dir prepended to PATH).
+//!   3. Materialize the desktop-owned prompt-context plugin in the app cache,
+//!      then spawn `node <root>/lib/bin.js web --patch <overlay> --host
+//!      127.0.0.1 --port 0`, adding `--no-open` when supported, with the
+//!      resolved environment (bundled node dir prepended to PATH).
 //!   4. Watch the child's stdout for the readiness line
 //!      `dsh web: http://127.0.0.1:<port>` and navigate the webview there.
 //!   5. On app exit, kill the child process tree.
 
 use std::{
     env,
+    ffi::OsString,
     fs::{self, OpenOptions},
     io::{BufRead, BufReader, Write},
     path::{Path, PathBuf},
@@ -97,6 +99,14 @@ const URL_LINE_PREFIX: &str = "dsh web: ";
 
 /// Normal title restored after temporary updater progress is shown.
 const APP_WINDOW_TITLE: &str = "DeepSeek Harness";
+
+/// Host-plane plugin embedded in the signed desktop executable. At launch it
+/// is materialized into the writable app cache and loaded through a generated
+/// `--patch` overlay, so external and bundled DSH runtimes receive the same
+/// deployment context without mutating user-owned configuration.
+const DESKTOP_CONTEXT_PLUGIN: &str = include_str!("../resources/dsh-desktop-context.mjs");
+const DESKTOP_CONTEXT_PLUGIN_FILE: &str = "dsh-desktop-context.mjs";
+const DESKTOP_CONTEXT_OVERLAY_FILE: &str = "dsh-desktop-context.patch.json";
 
 /// Injected after every finished page load. It routes external `window.open`
 /// calls through the opener plugin and mounts the desktop shell's manual
@@ -670,8 +680,6 @@ fn resolve_node(app: &AppHandle, configured: Option<String>) -> Result<PathBuf, 
 // Server lifecycle
 // ---------------------------------------------------------------------------
 
-const WEB_SERVER_ARGS: [&str; 5] = ["web", "--host", "127.0.0.1", "--port", "0"];
-
 fn web_runtime_supports_no_open(root: &Path) -> bool {
     let startup = root
         .join("node_modules")
@@ -682,10 +690,65 @@ fn web_runtime_supports_no_open(root: &Path) -> bool {
     fs::read_to_string(startup).is_ok_and(|source| source.contains("--no-open"))
 }
 
-fn web_server_args(supports_no_open: bool) -> Vec<&'static str> {
-    let mut args = WEB_SERVER_ARGS.to_vec();
+fn desktop_context_overlay(plugin: &Path) -> Result<String, String> {
+    if !plugin.is_absolute() {
+        return Err(format!(
+            "桌面运行时上下文插件必须使用绝对路径: {}",
+            plugin.display()
+        ));
+    }
+    let plugin = plugin
+        .to_str()
+        .ok_or_else(|| "桌面运行时上下文插件路径不是有效的 Unicode".to_string())?;
+    serde_json::to_string_pretty(&serde_json::json!([{
+        "insert": [{
+            "id": "dsh-desktop-context",
+            "name": plugin,
+        }],
+    }]))
+    .map_err(|error| format!("无法生成桌面运行时上下文配置: {error}"))
+}
+
+/// Materialize the embedded prompt plugin and its absolute-path overlay in
+/// the platform cache directory. Both files are desktop-owned and rewritten
+/// before the child starts; no user profile or Harness configuration is
+/// touched.
+fn prepare_desktop_context_overlay(app: &AppHandle) -> Result<PathBuf, String> {
+    let dir = app
+        .path()
+        .app_cache_dir()
+        .map_err(|error| format!("无法定位应用缓存目录: {error}"))?
+        .join("runtime-context");
+    fs::create_dir_all(&dir)
+        .map_err(|error| format!("无法创建桌面运行时上下文目录 {}: {error}", dir.display()))?;
+
+    let plugin = dir.join(DESKTOP_CONTEXT_PLUGIN_FILE);
+    fs::write(&plugin, DESKTOP_CONTEXT_PLUGIN)
+        .map_err(|error| format!("无法写入桌面运行时上下文插件 {}: {error}", plugin.display()))?;
+
+    let overlay = dir.join(DESKTOP_CONTEXT_OVERLAY_FILE);
+    let content = desktop_context_overlay(&plugin)?;
+    fs::write(&overlay, content).map_err(|error| {
+        format!(
+            "无法写入桌面运行时上下文配置 {}: {error}",
+            overlay.display()
+        )
+    })?;
+    Ok(overlay)
+}
+
+fn web_server_args(context_overlay: &Path, supports_no_open: bool) -> Vec<OsString> {
+    let mut args = vec![
+        OsString::from("web"),
+        OsString::from("--patch"),
+        context_overlay.as_os_str().to_os_string(),
+        OsString::from("--host"),
+        OsString::from("127.0.0.1"),
+        OsString::from("--port"),
+        OsString::from("0"),
+    ];
     if supports_no_open {
-        args.push("--no-open");
+        args.push(OsString::from("--no-open"));
     }
     args
 }
@@ -765,6 +828,7 @@ fn spawn_server(
     node: &Path,
     dsh_home: String,
 ) -> Result<Child, String> {
+    let context_overlay = prepare_desktop_context_overlay(app)?;
     run_ensure_fallback(node, root, Some(&dsh_home))?;
     if let Err(message) = run_ensure_marketplace(node, root, &dsh_home) {
         log(&format!(
@@ -776,7 +840,7 @@ fn spawn_server(
 
     let bin = root.join("lib").join("bin.js");
     let mut command = Command::new(node);
-    let server_args = web_server_args(web_runtime_supports_no_open(root));
+    let server_args = web_server_args(&context_overlay, web_runtime_supports_no_open(root));
     command
         .arg(&bin)
         .args(server_args)
@@ -1404,15 +1468,61 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use super::web_server_args;
+    use std::{env, ffi::OsStr, path::Path};
+
+    use super::{desktop_context_overlay, web_server_args, DESKTOP_CONTEXT_PLUGIN};
+
+    const OVERLAY: &str = "/tmp/dsh desktop/context.patch.json";
 
     #[test]
     fn desktop_server_suppresses_upstream_browser_handoff() {
-        assert!(web_server_args(true).contains(&"--no-open"));
+        assert!(web_server_args(Path::new(OVERLAY), true)
+            .iter()
+            .any(|arg| arg == OsStr::new("--no-open")));
     }
 
     #[test]
     fn desktop_server_remains_compatible_with_older_runtimes() {
-        assert!(!web_server_args(false).contains(&"--no-open"));
+        assert!(!web_server_args(Path::new(OVERLAY), false)
+            .iter()
+            .any(|arg| arg == OsStr::new("--no-open")));
+    }
+
+    #[test]
+    fn desktop_context_overlay_precedes_web_app_arguments() {
+        let args = web_server_args(Path::new(OVERLAY), false);
+        assert_eq!(args[0], OsStr::new("web"));
+        assert_eq!(args[1], OsStr::new("--patch"));
+        assert_eq!(args[2], OsStr::new(OVERLAY));
+        assert_eq!(args[3], OsStr::new("--host"));
+    }
+
+    #[test]
+    fn desktop_context_overlay_uses_an_absolute_plugin_path() {
+        let plugin = env::temp_dir().join("dsh desktop").join("context.mjs");
+        let overlay: serde_json::Value = serde_json::from_str(
+            &desktop_context_overlay(&plugin).expect("overlay must serialize"),
+        )
+        .expect("overlay must be valid JSON");
+        assert_eq!(overlay[0]["insert"][0]["id"], "dsh-desktop-context");
+        assert_eq!(
+            overlay[0]["insert"][0]["name"],
+            plugin.to_string_lossy().as_ref()
+        );
+    }
+
+    #[test]
+    fn desktop_context_overlay_rejects_a_relative_plugin_path() {
+        assert!(desktop_context_overlay(Path::new("context.mjs"))
+            .expect_err("relative plugin path must be rejected")
+            .contains("必须使用绝对路径"));
+    }
+
+    #[test]
+    fn desktop_context_keeps_the_home_dynamic() {
+        assert!(DESKTOP_CONTEXT_PLUGIN.contains("`$DSH_HOME` is the authoritative root"));
+        assert!(DESKTOP_CONTEXT_PLUGIN.contains("defaults to `~/.dsh-desktop`"));
+        assert!(DESKTOP_CONTEXT_PLUGIN.contains("may be overridden"));
+        assert!(DESKTOP_CONTEXT_PLUGIN.contains("do not assume `~/.dsh`"));
     }
 }

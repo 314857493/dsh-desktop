@@ -1,16 +1,27 @@
-// Boot-test a DSH runtime: spawns `node <runtime>/lib/bin.js web --port 0`,
-// adding `--no-open` when the bundled DSH version supports it,
+// Boot-test a DSH runtime: spawns `node <runtime>/lib/bin.js web --port 0`
+// with the desktop-owned prompt overlay, adding `--no-open` when supported,
 // waits for the readiness line or a crash, prints the first N lines.
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { spawn, spawnSync } from 'node:child_process'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { authenticatedWebFetch } from './boot-test-auth.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const node = process.argv[2] ?? process.execPath
 const runtime = process.argv[3] ?? join(here, '..', 'rt')
 const home = process.argv[4] ?? join(here, '..', '.dsh-boot-test')
 const timeoutMs = Number(process.argv[5] ?? 60000)
+
+// Exercise the same host-plane prompt plugin the native shell embeds. The
+// overlay contains an absolute plugin path because profile patches resolve
+// relative names from the profile directory, not from the overlay file.
+mkdirSync(home, { recursive: true })
+const desktopContextPlugin = join(here, '..', 'src-tauri', 'resources', 'dsh-desktop-context.mjs')
+const desktopContextOverlay = join(home, 'dsh-desktop-context.patch.json')
+writeFileSync(desktopContextOverlay, JSON.stringify([{
+  insert: [{ id: 'dsh-desktop-context', name: desktopContextPlugin }],
+}], null, 2))
 
 // Exercise the same first-run migration as the native shell. This catches a
 // missing/trimmed marketplace package before an installer is published.
@@ -35,7 +46,13 @@ if (existsSync(marketplaceMigration)) {
 
 const startup = join(runtime, 'node_modules', '@deepseek-ai', 'dsh-web-app', 'lib', 'startup.js')
 const supportsNoOpen = existsSync(startup) && readFileSync(startup, 'utf8').includes('--no-open')
-const serverArgs = [runtime + '/lib/bin.js', 'web', '--host', '127.0.0.1', '--port', '0']
+const serverArgs = [
+  runtime + '/lib/bin.js',
+  'web',
+  '--patch', desktopContextOverlay,
+  '--host', '127.0.0.1',
+  '--port', '0',
+]
 if (supportsNoOpen) serverArgs.push('--no-open')
 
 const child = spawn(node, serverArgs, {
@@ -63,7 +80,7 @@ async function finishReady(line) {
   if (existsSync(marketplaceMigration)) {
     const url = line.slice(line.indexOf('http')).trim()
     try {
-      const response = await fetch(`${url}/dsh-market/status`, {
+      const response = await authenticatedWebFetch(url, '/dsh-market/status', {
         signal: AbortSignal.timeout(Math.min(timeoutMs, 10000)),
       })
       const status = await response.json()

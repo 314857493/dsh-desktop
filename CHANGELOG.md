@@ -8,6 +8,14 @@ DeepSeek Harness 上游版本，以便复现构建和排查兼容性问题。
 
 ## [Unreleased]
 
+### 桌面端
+
+- 启动 DSH 时通过桌面端受管的 `--patch` overlay 加载部署上下文插件，明确告诉模型
+  `$DSH_HOME` 才是配置与用户数据的权威根目录；默认 `~/.dsh-desktop`，同时自动尊重
+  `dsh_home`、`DSH_DESKTOP_HOME` 与 `--home` 覆盖，不再误猜浏览器版 `~/.dsh`。
+- 插件内嵌于桌面可执行文件，并与 overlay 一同写入平台应用缓存，不修改用户的
+  `AGENTS.md`、profile 或 home 级 `cordis.patch.yml`，也不把机器绝对路径写进稳定提示词。
+
 ### 安全与发布
 
 - 将无密钥的上游 DSH 运行时构建与安装包签名拆分到不同 CI runner；准备包先在隔离目录校验再移入签名工作区，避免上游构建脚本或归档覆盖路径接触 updater / Apple 签名凭据。

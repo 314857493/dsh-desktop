@@ -295,7 +295,17 @@ export async function ensureMarketplace(runtimeDir, dshHome = runtimeHome()) {
   const profileDir = resolveProfileDir('web', dshHome)
   const profileManifestPath = join(profileDir, 'package.json')
   if (!existsSync(profileManifestPath)) {
-    initProfile(profileDir, PROFILE_TEMPLATES.web)
+    const template = PROFILE_TEMPLATES.web
+    const bundles = Array.isArray(template) ? template : template?.bundles
+    if (!Array.isArray(bundles) || !bundles.every((bundle) => typeof bundle === 'string')) {
+      throw new Error('runtime web profile template has no valid bundle list')
+    }
+    // DSH <= 0.1.1 exports profile templates as bundle arrays. Newer
+    // runtimes also carry the patch-reload policy beside the bundle list.
+    // initProfile keeps the same positional bundle argument in both APIs;
+    // pass the optional policy through so the generated profile matches the
+    // selected runtime instead of coupling this migration to either shape.
+    initProfile(profileDir, bundles, Array.isArray(template) ? undefined : template.patchReload)
   }
 
   const markerPath = join(profileDir, MARKETPLACE_MARKER)

@@ -25,7 +25,7 @@ function writeJson(path, value) {
   writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`)
 }
 
-function createFixture(t) {
+function createFixture(t, { structuredProfileTemplate = false } = {}) {
   const root = mkdtempSync(join(tmpdir(), 'dsh-desktop-marketplace-test-'))
   t.after(() => rmSync(root, { recursive: true, force: true }))
   const runtime = join(root, 'rt')
@@ -50,21 +50,27 @@ function createFixture(t) {
   const appBootDir = join(runtime, 'node_modules', '@deepseek-ai', 'dsh-app-boot')
   writeJson(join(appBootDir, 'package.json'), { type: 'module' })
   mkdirSync(join(appBootDir, 'lib'), { recursive: true })
+  const webProfileTemplate = structuredProfileTemplate
+    ? `{ bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app'], patchReload: 'live' }`
+    : `['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app']`
   writeFileSync(join(appBootDir, 'lib', 'index.js'), `
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 export const PROFILE_TEMPLATES = {
-  web: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app'],
+  web: ${webProfileTemplate},
 }
 export function resolveProfileDir(name, home) { return join(home, 'profiles', name) }
-export function initProfile(dir, bundles) {
+export function initProfile(dir, bundles, patchReload) {
   mkdirSync(dir, { recursive: true })
   const manifest = join(dir, 'package.json')
   if (!existsSync(manifest)) writeFileSync(manifest, JSON.stringify({
     name: 'dsh-profile-' + basename(dir),
     private: true,
     dependencies: {},
-    dsh: { profile: { bundles: [...bundles] } },
+    dsh: { profile: {
+      bundles: [...bundles],
+      ...(patchReload === undefined ? {} : { patchReload }),
+    } },
   }, null, 2) + '\\n')
   const patch = join(dir, 'cordis.patch.yml')
   if (!existsSync(patch)) writeFileSync(patch, '# user patches\\n[]\\n')
@@ -140,6 +146,16 @@ test('fresh profile receives an exact profile-managed marketplace and restart po
   assert.match(patch, /allowRestart: false/)
   const marker = JSON.parse(readFileSync(join(fixture.profileDir, MARKETPLACE_MARKER), 'utf8'))
   assert.equal(marker.schemaVersion, MARKETPLACE_SCHEMA_VERSION)
+})
+
+test('fresh profile accepts structured runtime templates and preserves their reload policy', async (t) => {
+  const fixture = createFixture(t, { structuredProfileTemplate: true })
+  const result = await ensureMarketplace(fixture.runtime, fixture.home)
+
+  assert.equal(result.status, 'installed')
+  const profile = profileManifest(fixture.profileDir)
+  assert.deepEqual(profile.dsh.profile.bundles, [...DEFAULT_BUNDLES, 'dshmarket'])
+  assert.equal(profile.dsh.profile.patchReload, 'live')
 })
 
 test('a marketplace removed after schema 2 is not installed again', async (t) => {

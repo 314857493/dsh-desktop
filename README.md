@@ -123,6 +123,12 @@ DSH，本仓库提供的是桌面封装、自包含打包与自动化发布（�
 > 如需共享会话历史，可显式把 `dsh_home` 设为 `~/.dsh`，但不要同时让两个
 > 实例处理同一个会话的消息。
 
+桌面壳还会向 DSH 的模型提示词注入一段部署上下文：`$DSH_HOME` 是 DSH 配置与
+用户数据的唯一权威根目录，默认是 `~/.dsh-desktop`，但始终尊重上述覆盖配置。
+模型查找 `settings.yaml`、`cordis.patch.yml`、`profiles/`、`skills/` 等受管文件时
+会使用 `$DSH_HOME`，不会误用浏览器版的 `~/.dsh` 或从当前 workspace 猜测路径。
+Tauri 壳自身的 `dsh-desktop.json` 与 DSH 内部配置保持分离。
+
 ## 插件商城
 
 自包含安装包预装发布配置中固定并校验完整性的开源社区插件
@@ -310,13 +316,17 @@ open "/Applications/DSH Desktop.app"
    包链接进 `$DSH_HOME/profiles/node_modules`，让 Cordis loader 能从配置文件目录
    解析到包；再把商城离线种子安装成 `web` profile 自己的依赖，并写入默认禁用内部重启的
    profile 策略，同时尊重用户设置、已有更新版本和后续卸载选择。
-3. 以 `web --host 127.0.0.1 --port 0` 启动服务器（端口由 OS 分配，避免冲突），
-   并把内置 node 目录加到子进程 PATH；Windows 上以 `CREATE_NO_WINDOW` 静默运行。
-4. 读取子进程 stdout，捕获 `dsh web: http://127.0.0.1:<port>` 就绪行后，
+3. 把桌面端内嵌的 prompt-context 插件写入平台应用缓存，以绝对路径生成桌面端受管的
+   `--patch` overlay；它只向系统提示词声明 `$DSH_HOME` 的权威性，不修改用户的
+   `AGENTS.md`、profile 或 home 级 `cordis.patch.yml`。
+4. 以 `web --patch <overlay> --host 127.0.0.1 --port 0` 启动服务器（端口由 OS
+   分配，避免冲突），并把内置 node 目录加到子进程 PATH；Windows 上以
+   `CREATE_NO_WINDOW` 静默运行。
+5. 读取子进程 stdout，捕获 `dsh web: http://127.0.0.1:<port>` 就绪行后，
    把 WebView 导航到该地址。
-5. 退出时终止服务器并等待回收；Windows 使用 `taskkill /T /F` 和
+6. 退出时终止服务器并等待回收；Windows 使用 `taskkill /T /F` 和
    kill-on-close Job Object 清理整个进程树，macOS/Linux 向服务器子进程发送 `kill`。
-6. 单实例插件阻止启动第二个实例；重复打开应用时只显示并聚焦现有窗口。
+7. 单实例插件阻止启动第二个实例；重复打开应用时只显示并聚焦现有窗口。
 
 **外链打开**：DSH 前端把外部链接渲染为 `target="_blank"`；opener 插件注入的
 脚本拦截点击并调用 Tauri IPC 让系统默认浏览器打开。由于页面地址是
@@ -332,6 +342,7 @@ open "/Applications/DSH Desktop.app"
 dsh-desktop/
 ├── src-tauri/            # Tauri 壳（Rust）
 │   ├── src/lib.rs        # 配置解析 / 拉起服务器 / 导航 / 进程清理
+│   ├── resources/        # 桌面端部署上下文插件（编译时内嵌）
 │   ├── tauri.conf.json   # 窗口、资源（rt→dsh、node-runtime→node、icon.ico）
 │   ├── capabilities/     # 权限：default + remote-opener（回环地址放行外链打开）
 │   ├── nsis/hooks.nsh    # 安装时创建桌面快捷方式（指向独立 ico）
@@ -351,6 +362,7 @@ dsh-desktop/
 │   ├── ensure-fallback.mjs    # 启动时链接内置包到 DSH_HOME
 │   ├── ensure-marketplace.mjs # 安装/迁移 profile 商城，保留更新和卸载选择
 │   ├── boot-test.mjs          # 运行时冒烟测试
+│   ├── dsh-desktop-context.test.mjs # 部署上下文 prompt 契约测试
 │   ├── gen-app-icon-svg.mjs   # 从官方 SVG 生成图标（含 glyph-path.txt）
 │   ├── repair-session-log.mjs # 会话日志修复（双实例写坏时重建连续 seq）
 │   ├── test-open-document.mjs # 端到端验证「打开配置文件」（TEST_NODE/TEST_BIN 指定运行时）
