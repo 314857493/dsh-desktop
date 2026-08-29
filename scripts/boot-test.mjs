@@ -4,7 +4,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { spawn, spawnSync } from 'node:child_process'
 import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { authenticatedWebFetch } from './boot-test-auth.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -14,13 +14,14 @@ const home = process.argv[4] ?? join(here, '..', '.dsh-boot-test')
 const timeoutMs = Number(process.argv[5] ?? 60000)
 
 // Exercise the same host-plane prompt plugin the native shell embeds. The
-// overlay contains an absolute plugin path because profile patches resolve
-// relative names from the profile directory, not from the overlay file.
+// overlay contains an absolute file URL because profile patches resolve
+// relative names from the profile directory, and Windows ESM imports reject
+// raw drive-letter paths.
 mkdirSync(home, { recursive: true })
 const desktopContextPlugin = join(here, '..', 'src-tauri', 'resources', 'dsh-desktop-context.mjs')
 const desktopContextOverlay = join(home, 'dsh-desktop-context.patch.json')
 writeFileSync(desktopContextOverlay, JSON.stringify([{
-  insert: [{ id: 'dsh-desktop-context', name: desktopContextPlugin }],
+  insert: [{ id: 'dsh-desktop-context', name: pathToFileURL(desktopContextPlugin).href }],
 }], null, 2))
 
 // Exercise the same first-run migration as the native shell. This catches a

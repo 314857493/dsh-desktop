@@ -697,13 +697,19 @@ fn desktop_context_overlay(plugin: &Path) -> Result<String, String> {
             plugin.display()
         ));
     }
-    let plugin = plugin
-        .to_str()
-        .ok_or_else(|| "桌面运行时上下文插件路径不是有效的 Unicode".to_string())?;
+    // Node's ESM loader accepts raw absolute paths on Unix, but interprets a
+    // Windows drive letter as an unsupported URL scheme. Always serialize a
+    // file URL so the same overlay works on every supported platform.
+    let plugin = tauri::Url::from_file_path(plugin).map_err(|_| {
+        format!(
+            "无法将桌面运行时上下文插件路径转换为文件 URL: {}",
+            plugin.display()
+        )
+    })?;
     serde_json::to_string_pretty(&serde_json::json!([{
         "insert": [{
             "id": "dsh-desktop-context",
-            "name": plugin,
+            "name": plugin.as_str(),
         }],
     }]))
     .map_err(|error| format!("无法生成桌面运行时上下文配置: {error}"))
@@ -1498,16 +1504,27 @@ mod tests {
     }
 
     #[test]
-    fn desktop_context_overlay_uses_an_absolute_plugin_path() {
+    fn desktop_context_overlay_uses_an_absolute_plugin_file_url() {
         let plugin = env::temp_dir().join("dsh desktop").join("context.mjs");
         let overlay: serde_json::Value = serde_json::from_str(
             &desktop_context_overlay(&plugin).expect("overlay must serialize"),
         )
         .expect("overlay must be valid JSON");
+        let plugin_url = tauri::Url::from_file_path(&plugin).expect("path must become a file URL");
         assert_eq!(overlay[0]["insert"][0]["id"], "dsh-desktop-context");
+        assert_eq!(overlay[0]["insert"][0]["name"], plugin_url.as_str());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn desktop_context_overlay_uses_a_file_url_for_windows_drive_paths() {
+        let plugin = Path::new(r"C:\dsh desktop\context.mjs");
+        let overlay: serde_json::Value =
+            serde_json::from_str(&desktop_context_overlay(plugin).expect("overlay must serialize"))
+                .expect("overlay must be valid JSON");
         assert_eq!(
             overlay[0]["insert"][0]["name"],
-            plugin.to_string_lossy().as_ref()
+            "file:///C:/dsh%20desktop/context.mjs"
         );
     }
 
