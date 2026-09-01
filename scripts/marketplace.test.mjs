@@ -242,6 +242,28 @@ test('an older registry version is refreshed and pinned when its declared range 
   assert.equal(readFileSync(join(installed, 'seed.txt'), 'utf8'), 'bundled seed\n')
 })
 
+test('a previously copied current seed with an old range is pinned without recopying', async (t) => {
+  const fixture = createFixture(t)
+  initializeProfile(fixture.profileDir, {
+    dependencies: { dshmarket: '^1.0.0' },
+    marketplaceBundle: true,
+  })
+  const installed = writeInstalledMarketplace(fixture.profileDir, SEED_VERSION)
+  writeJson(join(installed, MARKETPLACE_SEED_OWNERSHIP), {
+    schemaVersion: 1,
+    package: 'dshmarket',
+    version: SEED_VERSION,
+  })
+  writeFileSync(join(installed, 'previous-migration.txt'), 'preserve me\n')
+
+  const result = await ensureMarketplace(fixture.runtime, fixture.home)
+
+  assert.equal(result.status, 'repaired')
+  assert.equal(result.version, SEED_VERSION)
+  assert.equal(profileManifest(fixture.profileDir).dependencies.dshmarket, SEED_VERSION)
+  assert.equal(readFileSync(join(installed, 'previous-migration.txt'), 'utf8'), 'preserve me\n')
+})
+
 test('an exact older registry version is preserved as an explicit user selection', async (t) => {
   const fixture = createFixture(t)
   initializeProfile(fixture.profileDir, {
@@ -324,6 +346,59 @@ test('a numerically newer prerelease is never downgraded to the bundled seed', a
   assert.equal(result.version, '1.2.3-beta.10')
   assert.equal(profileManifest(fixture.profileDir).dependencies.dshmarket, '^1.2.3-beta.1')
   assert.equal(readFileSync(join(installed, 'user-version.txt'), 'utf8'), 'keep newer prerelease\n')
+})
+
+test('a prerelease seed outside the declared stable range is never installed', async (t) => {
+  const fixture = createFixture(t, { seedVersion: '1.3.0-beta.1' })
+  initializeProfile(fixture.profileDir, {
+    dependencies: { dshmarket: '^1.2.3' },
+    marketplaceBundle: true,
+  })
+  const installed = writeInstalledMarketplace(fixture.profileDir, '1.2.3')
+  writeFileSync(join(installed, 'stable-version.txt'), 'keep stable version\n')
+
+  const result = await ensureMarketplace(fixture.runtime, fixture.home)
+
+  assert.equal(result.status, 'alreadyInstalled')
+  assert.equal(result.version, '1.2.3')
+  assert.equal(profileManifest(fixture.profileDir).dependencies.dshmarket, '^1.2.3')
+  assert.equal(readFileSync(join(installed, 'stable-version.txt'), 'utf8'), 'keep stable version\n')
+})
+
+test('a newer prerelease with the same core tuple is allowed by a prerelease range', async (t) => {
+  const fixture = createFixture(t, { seedVersion: '1.2.3-beta.2' })
+  initializeProfile(fixture.profileDir, {
+    dependencies: { dshmarket: '^1.2.3-beta.1' },
+    marketplaceBundle: true,
+  })
+  const installed = writeInstalledMarketplace(fixture.profileDir, '1.2.3-beta.1')
+
+  const result = await ensureMarketplace(fixture.runtime, fixture.home)
+
+  assert.equal(result.status, 'updated')
+  assert.equal(result.version, '1.2.3-beta.2')
+  assert.equal(profileManifest(fixture.profileDir).dependencies.dshmarket, '1.2.3-beta.2')
+  assert.equal(readFileSync(join(installed, 'seed.txt'), 'utf8'), 'bundled seed\n')
+})
+
+test('a prerelease seed is not included by the wildcard range', async (t) => {
+  const fixture = createFixture(t, { seedVersion: '1.3.0-beta.1' })
+  initializeProfile(fixture.profileDir, {
+    dependencies: { dshmarket: '*' },
+    marketplaceBundle: true,
+  })
+  const installed = writeInstalledMarketplace(fixture.profileDir, '1.2.3')
+  writeFileSync(join(installed, 'stable-version.txt'), 'keep wildcard stable version\n')
+
+  const result = await ensureMarketplace(fixture.runtime, fixture.home)
+
+  assert.equal(result.status, 'alreadyInstalled')
+  assert.equal(result.version, '1.2.3')
+  assert.equal(profileManifest(fixture.profileDir).dependencies.dshmarket, '*')
+  assert.equal(
+    readFileSync(join(installed, 'stable-version.txt'), 'utf8'),
+    'keep wildcard stable version\n',
+  )
 })
 
 test('an active package with a missing dependency entry is re-registered without overwrite', async (t) => {

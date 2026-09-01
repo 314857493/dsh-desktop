@@ -126,6 +126,15 @@ function simpleSpecAllowsVersion(spec, version) {
 
   const comparison = compareVersions(installed, lower)
   if (match.groups.operator === '') return comparison === 0
+  // npm ranges exclude prereleases unless a comparator in the same set also
+  // names a prerelease with the exact same major/minor/patch tuple. Without
+  // this guard, for example, ^1.2.3 would incorrectly authorize 1.3.0-beta.1.
+  if (installed.prerelease !== undefined && (
+    lower.prerelease === undefined ||
+    installed.major !== lower.major ||
+    installed.minor !== lower.minor ||
+    installed.patch !== lower.patch
+  )) return false
   if (comparison < 0) return false
   if (match.groups.operator === '~') {
     return installed.major === lower.major && installed.minor === lower.minor
@@ -142,7 +151,8 @@ function seedMatchesSpec(seed, spec) {
   if (simple !== undefined) return simple
   if (typeof spec !== 'string') return false
   const candidate = spec.trim()
-  return candidate === '*' || candidate === seed.requested
+  if (candidate === '*') return parseVersion(seed.version)?.prerelease === undefined
+  return candidate === seed.requested
 }
 
 function seedIsNewerThanInstalled(seed, installedPackage) {
@@ -386,6 +396,14 @@ export async function ensureMarketplace(runtimeDir, dshHome = runtimeHome()) {
   const installedAllowsNewerSeed = installedPackage !== undefined &&
     seedMatchesDependency &&
     seedIsNewerThanInstalled(seed, installedPackage)
+  // The previous range-refresh migration copied the current seed and wrote an
+  // ownership marker but preserved the old dependency range. Recognize that
+  // completed physical state so this migration can finish pinning the profile
+  // without copying over the package a second time.
+  const installedSeedNeedsPin = installedIsOwnedSeed &&
+    installedPackage.version === seed.version &&
+    seedMatchesDependency &&
+    dependencySpec !== seed.version
   const installedPackageUsable = installedPackage !== undefined && (
     !installedIsOwnedSeed || seedMatchesDependency
   )
@@ -397,10 +415,9 @@ export async function ensureMarketplace(runtimeDir, dshHome = runtimeHome()) {
     ? marker.suspended
     : undefined
 
-  const installSeed = (nextStatus) => {
-    copySeedPackage(seedPackageDir, profileDir, seed.version)
-    // Pin the profile to the copy we just installed. Keeping an older range
-    // here lets an otherwise unrelated pnpm command replay its stale lockfile
+  const pinInstalledSeed = (nextStatus) => {
+    // Pin the profile to the desktop-owned copy. Keeping an older range here
+    // lets an otherwise unrelated pnpm command replay its stale lockfile
     // resolution and silently replace the compatible seed with the old
     // marketplace version again.
     profile.dependencies[MARKETPLACE_PACKAGE] = seed.version
@@ -411,8 +428,15 @@ export async function ensureMarketplace(runtimeDir, dshHome = runtimeHome()) {
     status = nextStatus
   }
 
+  const installSeed = (nextStatus) => {
+    copySeedPackage(seedPackageDir, profileDir, seed.version)
+    pinInstalledSeed(nextStatus)
+  }
+
   if (suspension !== undefined && hasDependency && !hasBundle) {
-    if (installedAllowsNewerSeed) {
+    if (installedSeedNeedsPin) {
+      pinInstalledSeed('repaired')
+    } else if (installedAllowsNewerSeed) {
       installSeed('updated')
     } else if (installedPackageUsable) {
       bundles.push(MARKETPLACE_PACKAGE)
@@ -441,6 +465,8 @@ export async function ensureMarketplace(runtimeDir, dshHome = runtimeHome()) {
     installSeed('updated')
   } else if (hasBundle && hasDependency && installedAllowsNewerSeed) {
     installSeed('updated')
+  } else if (hasBundle && hasDependency && installedSeedNeedsPin) {
+    pinInstalledSeed('repaired')
   } else if (hasBundle && hasDependency && !installedPackageUsable) {
     if (installedPackage === undefined && seedMatchesDependency) {
       installSeed('repaired')
