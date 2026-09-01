@@ -8,6 +8,8 @@ DeepSeek Harness 上游版本，以便复现构建和排查兼容性问题。
 
 ## [Unreleased]
 
+## [0.1.16] - 2026-09-01
+
 ### 桌面端
 
 - 修复应用升级后旧版桌面受管 `dshmarket` 被误判为用户选择版本、无法随内置运行时刷新，
@@ -15,6 +17,40 @@ DeepSeek Harness 上游版本，以便复现构建和排查兼容性问题。
 - 兼容新版 DSH 的一次性 token 与 Strict Cookie 登录流程：由桌面端在 loopback 上完成
   token 交换并安全写入 WebView，避免首次跳转返回 401；同时从日志中移除启动 token，
   并在服务器退出或返回无效就绪地址时显示明确错误，不再无限等待。
+
+### 内置 DeepSeek Harness
+
+- 版本：`dsh-v0.1.2-alpha.2`
+- Commit：`0a53fb55bea101816fa226bb964ae2bed71c343b`
+- [上游 Release Notes](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.2-alpha.2)
+
+#### 新增功能
+
+* 界面新增显示连接异常状态，支持自动重试和立即重连 @imccyu
+* 会话标题区域支持查看活动的定时计划 @pku-xht
+
+#### 体验优化
+
+* 插件列表按会话插件和全局插件分组，可切换 Agent Preset 查看组合、搜索其他预设 @LegGasai
+* 改善会话与输入界面的菜单显示、滚动条、工具文件链接与 diff 统计 @Yifffan
+* 减少 macOS 和 Linux 加载会话时不必要的文件系统检查 @LegGasai
+* 提升长会话历史和密集实时消息的处理效率 @Dudu-0223
+* 回答末尾显示 token 用量和耗时，点击可查看详细统计 @Yifffan
+* `web_search` 失败时报告实际端点和错误明细 @CreatixChu
+* 权限分类使用本地化内容显示 @imccyu
+* 调整首页标志的动画效果 @Yifffan
+
+#### 问题修复
+
+* 修复使用鼠标在 `@` 菜单中下钻目录时面包屑丢失或路径消失的问题 @LegGasai
+* 优化 NPM 包中的 peer dependency 依赖以改善包管理解析成本 @imccyu
+* 修复 Node.js 24.0–24.11.1 上启动可能失败且 HMR 失效的问题 @imccyu
+* 关闭设置窗口后，键盘焦点会返回设置入口 @LegGasai
+
+#### 其他变更
+
+* 恢复 0.1.2-alpha.1 中移除的 `SessionEvent.ignorable` @tianyicui
+* Remote 网关提供统一的 RemoteError 调用异常封装 @imccyu
 
 ## [0.1.15] - 2026-08-31
 
@@ -448,5 +484,7 @@ DeepSeek Harness 上游版本，以便复现构建和排查兼容性问题。
 
 [0.1.14]: https://github.com/314857493/dsh-desktop/compare/v0.1.13...v0.1.14
 
-[Unreleased]: https://github.com/314857493/dsh-desktop/compare/v0.1.15...HEAD
 [0.1.15]: https://github.com/314857493/dsh-desktop/compare/v0.1.14...v0.1.15
+
+[Unreleased]: https://github.com/314857493/dsh-desktop/compare/v0.1.16...HEAD
+[0.1.16]: https://github.com/314857493/dsh-desktop/compare/v0.1.15...v0.1.16
