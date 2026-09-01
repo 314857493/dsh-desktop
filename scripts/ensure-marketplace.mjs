@@ -84,7 +84,29 @@ function compareVersions(left, right) {
   if (left.prerelease === right.prerelease) return 0
   if (left.prerelease === undefined) return 1
   if (right.prerelease === undefined) return -1
-  return left.prerelease.localeCompare(right.prerelease)
+  const leftIdentifiers = left.prerelease.split('.')
+  const rightIdentifiers = right.prerelease.split('.')
+  const length = Math.max(leftIdentifiers.length, rightIdentifiers.length)
+  for (let index = 0; index < length; index += 1) {
+    const leftIdentifier = leftIdentifiers[index]
+    const rightIdentifier = rightIdentifiers[index]
+    if (leftIdentifier === rightIdentifier) continue
+    if (leftIdentifier === undefined) return -1
+    if (rightIdentifier === undefined) return 1
+
+    const leftIsNumeric = /^\d+$/.test(leftIdentifier)
+    const rightIsNumeric = /^\d+$/.test(rightIdentifier)
+    if (leftIsNumeric && rightIsNumeric) {
+      const leftNumber = BigInt(leftIdentifier)
+      const rightNumber = BigInt(rightIdentifier)
+      if (leftNumber !== rightNumber) return leftNumber < rightNumber ? -1 : 1
+      continue
+    }
+    if (leftIsNumeric) return -1
+    if (rightIsNumeric) return 1
+    return leftIdentifier < rightIdentifier ? -1 : 1
+  }
+  return 0
 }
 
 // Return true/false only for the common exact, caret, and tilde registry
@@ -357,9 +379,9 @@ export async function ensureMarketplace(runtimeDir, dshHome = runtimeHome()) {
   // A package-manager update replaces the marketplace directory and drops
   // the desktop ownership marker. The dependency range still records what
   // the user authorized, though: when the bundled seed is newer and remains
-  // inside that range, refreshing to it is the same resolution the declared
-  // spec permits. This keeps a formerly desktop-owned market from becoming a
-  // boot blocker after a core upgrade, while exact versions, newer installed
+  // inside that range, refreshing and pinning it is the same resolution the
+  // declared spec permits. Pinning also prevents a later pnpm command from
+  // replaying an older lockfile resolution. Exact versions, newer installed
   // versions, and git/file/unknown selections remain untouched.
   const installedAllowsNewerSeed = installedPackage !== undefined &&
     seedMatchesDependency &&
@@ -375,9 +397,13 @@ export async function ensureMarketplace(runtimeDir, dshHome = runtimeHome()) {
     ? marker.suspended
     : undefined
 
-  const installSeed = (nextStatus, { preserveDependency = false } = {}) => {
+  const installSeed = (nextStatus) => {
     copySeedPackage(seedPackageDir, profileDir, seed.version)
-    if (!preserveDependency) profile.dependencies[MARKETPLACE_PACKAGE] = seed.version
+    // Pin the profile to the copy we just installed. Keeping an older range
+    // here lets an otherwise unrelated pnpm command replay its stale lockfile
+    // resolution and silently replace the compatible seed with the old
+    // marketplace version again.
+    profile.dependencies[MARKETPLACE_PACKAGE] = seed.version
     if (!hasBundle) bundles.push(MARKETPLACE_PACKAGE)
     profileChanged = true
     bundleEnabled = true
@@ -387,7 +413,7 @@ export async function ensureMarketplace(runtimeDir, dshHome = runtimeHome()) {
 
   if (suspension !== undefined && hasDependency && !hasBundle) {
     if (installedAllowsNewerSeed) {
-      installSeed('updated', { preserveDependency: true })
+      installSeed('updated')
     } else if (installedPackageUsable) {
       bundles.push(MARKETPLACE_PACKAGE)
       profileChanged = true
@@ -414,7 +440,7 @@ export async function ensureMarketplace(runtimeDir, dshHome = runtimeHome()) {
   } else if (hasBundle && hasDependency && installedIsStaleSeed) {
     installSeed('updated')
   } else if (hasBundle && hasDependency && installedAllowsNewerSeed) {
-    installSeed('updated', { preserveDependency: true })
+    installSeed('updated')
   } else if (hasBundle && hasDependency && !installedPackageUsable) {
     if (installedPackage === undefined && seedMatchesDependency) {
       installSeed('repaired')

@@ -25,7 +25,10 @@ function writeJson(path, value) {
   writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`)
 }
 
-function createFixture(t, { structuredProfileTemplate = false } = {}) {
+function createFixture(t, {
+  structuredProfileTemplate = false,
+  seedVersion = SEED_VERSION,
+} = {}) {
   const root = mkdtempSync(join(tmpdir(), 'dsh-desktop-marketplace-test-'))
   t.after(() => rmSync(root, { recursive: true, force: true }))
   const runtime = join(root, 'rt')
@@ -37,11 +40,11 @@ function createFixture(t, { structuredProfileTemplate = false } = {}) {
     schemaVersion: 1,
     package: 'dshmarket',
     requested: 'latest',
-    version: SEED_VERSION,
+    version: seedVersion,
   })
   writeJson(join(seedPackage, 'package.json'), {
     name: 'dshmarket',
-    version: SEED_VERSION,
+    version: seedVersion,
     dsh: { bundle: { patch: 'cordis.patch.yml' } },
   })
   writeFileSync(join(seedPackage, 'cordis.patch.yml'), '- insert: []\n')
@@ -221,7 +224,7 @@ test('an existing profile-managed marketplace version is never overwritten', asy
   assert.equal(readFileSync(join(installed, 'user-version.txt'), 'utf8'), 'keep me\n')
 })
 
-test('an older registry version is refreshed when its declared range allows the seed', async (t) => {
+test('an older registry version is refreshed and pinned when its declared range allows the seed', async (t) => {
   const fixture = createFixture(t)
   initializeProfile(fixture.profileDir, {
     dependencies: { dshmarket: '^1.0.0' },
@@ -234,7 +237,7 @@ test('an older registry version is refreshed when its declared range allows the 
 
   assert.equal(result.status, 'updated')
   assert.equal(result.version, SEED_VERSION)
-  assert.equal(profileManifest(fixture.profileDir).dependencies.dshmarket, '^1.0.0')
+  assert.equal(profileManifest(fixture.profileDir).dependencies.dshmarket, SEED_VERSION)
   assert.ok(!existsSync(join(installed, 'obsolete.txt')))
   assert.equal(readFileSync(join(installed, 'seed.txt'), 'utf8'), 'bundled seed\n')
 })
@@ -304,6 +307,23 @@ test('a newer user-selected range package is never downgraded to the bundled see
   assert.equal(result.version, '1.3.0')
   assert.equal(profileManifest(fixture.profileDir).dependencies.dshmarket, '^1.0.0')
   assert.equal(readFileSync(join(installed, 'user-version.txt'), 'utf8'), 'keep me\n')
+})
+
+test('a numerically newer prerelease is never downgraded to the bundled seed', async (t) => {
+  const fixture = createFixture(t, { seedVersion: '1.2.3-beta.2' })
+  initializeProfile(fixture.profileDir, {
+    dependencies: { dshmarket: '^1.2.3-beta.1' },
+    marketplaceBundle: true,
+  })
+  const installed = writeInstalledMarketplace(fixture.profileDir, '1.2.3-beta.10')
+  writeFileSync(join(installed, 'user-version.txt'), 'keep newer prerelease\n')
+
+  const result = await ensureMarketplace(fixture.runtime, fixture.home)
+
+  assert.equal(result.status, 'alreadyInstalled')
+  assert.equal(result.version, '1.2.3-beta.10')
+  assert.equal(profileManifest(fixture.profileDir).dependencies.dshmarket, '^1.2.3-beta.1')
+  assert.equal(readFileSync(join(installed, 'user-version.txt'), 'utf8'), 'keep newer prerelease\n')
 })
 
 test('an active package with a missing dependency entry is re-registered without overwrite', async (t) => {
