@@ -221,6 +221,41 @@ test('an existing profile-managed marketplace version is never overwritten', asy
   assert.equal(readFileSync(join(installed, 'user-version.txt'), 'utf8'), 'keep me\n')
 })
 
+test('an older registry version is refreshed when its declared range allows the seed', async (t) => {
+  const fixture = createFixture(t)
+  initializeProfile(fixture.profileDir, {
+    dependencies: { dshmarket: '^1.0.0' },
+    marketplaceBundle: true,
+  })
+  const installed = writeInstalledMarketplace(fixture.profileDir, '1.0.0')
+  writeFileSync(join(installed, 'obsolete.txt'), 'old registry package\n')
+
+  const result = await ensureMarketplace(fixture.runtime, fixture.home)
+
+  assert.equal(result.status, 'updated')
+  assert.equal(result.version, SEED_VERSION)
+  assert.equal(profileManifest(fixture.profileDir).dependencies.dshmarket, '^1.0.0')
+  assert.ok(!existsSync(join(installed, 'obsolete.txt')))
+  assert.equal(readFileSync(join(installed, 'seed.txt'), 'utf8'), 'bundled seed\n')
+})
+
+test('an exact older registry version is preserved as an explicit user selection', async (t) => {
+  const fixture = createFixture(t)
+  initializeProfile(fixture.profileDir, {
+    dependencies: { dshmarket: '1.0.0' },
+    marketplaceBundle: true,
+  })
+  const installed = writeInstalledMarketplace(fixture.profileDir, '1.0.0')
+  writeFileSync(join(installed, 'user-version.txt'), 'keep exact version\n')
+
+  const result = await ensureMarketplace(fixture.runtime, fixture.home)
+
+  assert.equal(result.status, 'alreadyInstalled')
+  assert.equal(result.version, '1.0.0')
+  assert.equal(profileManifest(fixture.profileDir).dependencies.dshmarket, '1.0.0')
+  assert.equal(readFileSync(join(installed, 'user-version.txt'), 'utf8'), 'keep exact version\n')
+})
+
 test('an older desktop-owned seed is refreshed after the bundled runtime updates', async (t) => {
   const fixture = createFixture(t)
   initializeProfile(fixture.profileDir, {
@@ -249,23 +284,24 @@ test('an older desktop-owned seed is refreshed after the bundled runtime updates
   assert.equal(ownership.version, SEED_VERSION)
 })
 
-test('a stale owned package is preserved after its dependency was user-selected', async (t) => {
+test('a newer user-selected range package is never downgraded to the bundled seed', async (t) => {
   const fixture = createFixture(t)
   initializeProfile(fixture.profileDir, {
     dependencies: { dshmarket: '^1.0.0' },
     marketplaceBundle: true,
   })
-  const installed = writeInstalledMarketplace(fixture.profileDir, '1.0.0')
+  const installed = writeInstalledMarketplace(fixture.profileDir, '1.3.0')
   writeJson(join(installed, MARKETPLACE_SEED_OWNERSHIP), {
     schemaVersion: 1,
     package: 'dshmarket',
-    version: '1.0.0',
+    version: '1.3.0',
   })
   writeFileSync(join(installed, 'user-version.txt'), 'keep me\n')
 
   const result = await ensureMarketplace(fixture.runtime, fixture.home)
 
   assert.equal(result.status, 'alreadyInstalled')
+  assert.equal(result.version, '1.3.0')
   assert.equal(profileManifest(fixture.profileDir).dependencies.dshmarket, '^1.0.0')
   assert.equal(readFileSync(join(installed, 'user-version.txt'), 'utf8'), 'keep me\n')
 })

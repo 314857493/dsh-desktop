@@ -123,6 +123,13 @@ function seedMatchesSpec(seed, spec) {
   return candidate === '*' || candidate === seed.requested
 }
 
+function seedIsNewerThanInstalled(seed, installedPackage) {
+  const bundled = parseVersion(seed.version)
+  const installed = parseVersion(installedPackage?.version)
+  return bundled !== undefined && installed !== undefined &&
+    compareVersions(bundled, installed) > 0
+}
+
 function isOwnedSeedPackage(profileDir, installedPackage) {
   if (installedPackage === undefined) return false
   const ownershipPath = join(
@@ -347,6 +354,16 @@ export async function ensureMarketplace(runtimeDir, dshHome = runtimeHome()) {
   const installedIsStaleSeed = installedIsOwnedSeed &&
     installedPackage.version !== seed.version &&
     dependencySpec === installedPackage.version
+  // A package-manager update replaces the marketplace directory and drops
+  // the desktop ownership marker. The dependency range still records what
+  // the user authorized, though: when the bundled seed is newer and remains
+  // inside that range, refreshing to it is the same resolution the declared
+  // spec permits. This keeps a formerly desktop-owned market from becoming a
+  // boot blocker after a core upgrade, while exact versions, newer installed
+  // versions, and git/file/unknown selections remain untouched.
+  const installedAllowsNewerSeed = installedPackage !== undefined &&
+    seedMatchesDependency &&
+    seedIsNewerThanInstalled(seed, installedPackage)
   const installedPackageUsable = installedPackage !== undefined && (
     !installedIsOwnedSeed || seedMatchesDependency
   )
@@ -358,9 +375,9 @@ export async function ensureMarketplace(runtimeDir, dshHome = runtimeHome()) {
     ? marker.suspended
     : undefined
 
-  const installSeed = (nextStatus) => {
+  const installSeed = (nextStatus, { preserveDependency = false } = {}) => {
     copySeedPackage(seedPackageDir, profileDir, seed.version)
-    profile.dependencies[MARKETPLACE_PACKAGE] = seed.version
+    if (!preserveDependency) profile.dependencies[MARKETPLACE_PACKAGE] = seed.version
     if (!hasBundle) bundles.push(MARKETPLACE_PACKAGE)
     profileChanged = true
     bundleEnabled = true
@@ -369,7 +386,9 @@ export async function ensureMarketplace(runtimeDir, dshHome = runtimeHome()) {
   }
 
   if (suspension !== undefined && hasDependency && !hasBundle) {
-    if (installedPackageUsable) {
+    if (installedAllowsNewerSeed) {
+      installSeed('updated', { preserveDependency: true })
+    } else if (installedPackageUsable) {
       bundles.push(MARKETPLACE_PACKAGE)
       profileChanged = true
       bundleEnabled = true
@@ -394,6 +413,8 @@ export async function ensureMarketplace(runtimeDir, dshHome = runtimeHome()) {
     }
   } else if (hasBundle && hasDependency && installedIsStaleSeed) {
     installSeed('updated')
+  } else if (hasBundle && hasDependency && installedAllowsNewerSeed) {
+    installSeed('updated', { preserveDependency: true })
   } else if (hasBundle && hasDependency && !installedPackageUsable) {
     if (installedPackage === undefined && seedMatchesDependency) {
       installSeed('repaired')
