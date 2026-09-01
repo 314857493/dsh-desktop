@@ -123,7 +123,7 @@ function seedMatchesSpec(seed, spec) {
   return candidate === '*' || candidate === seed.requested
 }
 
-function isOwnedSeedPackage(profileDir, installedPackage, seedVersion) {
+function isOwnedSeedPackage(profileDir, installedPackage) {
   if (installedPackage === undefined) return false
   const ownershipPath = join(
     profileDir,
@@ -136,8 +136,8 @@ function isOwnedSeedPackage(profileDir, installedPackage, seedVersion) {
     const ownership = readJson(ownershipPath)
     return ownership?.schemaVersion === 1 &&
       ownership?.package === MARKETPLACE_PACKAGE &&
-      ownership?.version === seedVersion &&
-      installedPackage.version === seedVersion
+      typeof ownership?.version === 'string' &&
+      installedPackage.version === ownership.version
   } catch {
     return false
   }
@@ -337,7 +337,16 @@ export async function ensureMarketplace(runtimeDir, dshHome = runtimeHome()) {
     }
   }
   const seedMatchesDependency = seedMatchesSpec(seed, dependencySpec)
-  const installedIsOwnedSeed = isOwnedSeedPackage(profileDir, installedPackage, seed.version)
+  const installedIsOwnedSeed = isOwnedSeedPackage(profileDir, installedPackage)
+  // installSeed writes an exact dependency. If both that exact spec and the
+  // ownership record still point at an older bundled copy, no user-managed
+  // selection has replaced it: refresh it with the seed shipped alongside
+  // the new core runtime. Comparing ownership only with the *current* seed
+  // made every old desktop seed look user-managed after an app update, which
+  // could leave an incompatible plugin in the boot-critical bundle list.
+  const installedIsStaleSeed = installedIsOwnedSeed &&
+    installedPackage.version !== seed.version &&
+    dependencySpec === installedPackage.version
   const installedPackageUsable = installedPackage !== undefined && (
     !installedIsOwnedSeed || seedMatchesDependency
   )
@@ -383,6 +392,8 @@ export async function ensureMarketplace(runtimeDir, dshHome = runtimeHome()) {
     } else {
       installSeed(markerSchema === 1 ? 'migrated' : 'repaired')
     }
+  } else if (hasBundle && hasDependency && installedIsStaleSeed) {
+    installSeed('updated')
   } else if (hasBundle && hasDependency && !installedPackageUsable) {
     if (installedPackage === undefined && seedMatchesDependency) {
       installSeed('repaired')
