@@ -8,6 +8,36 @@ DeepSeek Harness 上游版本，以便复现构建和排查兼容性问题。
 
 ## [Unreleased]
 
+## [0.1.17] - 2026-09-01
+
+### 桌面端
+
+- 无桌面壳代码变更；此版本用于同步上游 DeepSeek Harness。
+
+### 内置 DeepSeek Harness
+
+- 版本：`dsh-v0.1.2-alpha.2` → `dsh-v0.1.2-alpha.3`
+- Commit：`dd6322d604e00eec1ba5e0c8541159906a21094a`
+- [上游 Release Notes](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.2-alpha.3)
+
+#### 体验优化
+
+* 长会话右侧导航支持预览和跳转尚未载入的全部分页轮次 @LegGasai
+* 改善长会话渲染的内存开销和代码高亮流畅度 @imccyu, @07akioni
+* 优化权限标签多语言表达 @ZiyaZhang
+
+#### 问题修复
+
+* 会话运行中追加或排队发送的图片可正确回显并可靠投递；持续子代理的后续消息也支持图片 @CreatixChu
+* `read_image` 可根据文件内容识别并读取没有扩展名的图片附件路径 @CreatixChu
+* 命令菜单打开时，`Tab` 可补全当前高亮的斜杠命令 @mektpoy
+* 修复后端卡顿可能造成网络连接被误判为断开的问题 @imccyu
+* 修复会话标题中的定时计划列表在窄视口下偏移或越界的问题 @pku-xht
+
+#### 其他变更
+
+* 移除可选的 SQLite Session 持久化后端；已有内容不会删除，请使用旧版本导出 @tianyicui
+
 ## [0.1.16] - 2026-09-01
 
 ### 桌面端
@@ -486,5 +516,7 @@ DeepSeek Harness 上游版本，以便复现构建和排查兼容性问题。
 
 [0.1.15]: https://github.com/314857493/dsh-desktop/compare/v0.1.14...v0.1.15
 
-[Unreleased]: https://github.com/314857493/dsh-desktop/compare/v0.1.16...HEAD
 [0.1.16]: https://github.com/314857493/dsh-desktop/compare/v0.1.15...v0.1.16
+
+[Unreleased]: https://github.com/314857493/dsh-desktop/compare/v0.1.17...HEAD
+[0.1.17]: https://github.com/314857493/dsh-desktop/compare/v0.1.16...v0.1.17
