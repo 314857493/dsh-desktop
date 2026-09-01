@@ -20,7 +20,8 @@ use std::{
     env,
     ffi::OsString,
     fs::{self, OpenOptions},
-    io::{BufRead, BufReader, Write},
+    io::{BufRead, BufReader, Read, Write},
+    net::{IpAddr, TcpStream, ToSocketAddrs},
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
     sync::{Mutex, OnceLock},
@@ -29,7 +30,7 @@ use std::{
 };
 
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Manager, RunEvent, State, WebviewWindow};
+use tauri::{webview::Cookie, AppHandle, Manager, RunEvent, State, WebviewWindow};
 use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
 use tauri_plugin_updater::UpdaterExt;
 
@@ -436,6 +437,11 @@ struct ServerHandle(Mutex<Option<Child>>);
 /// remain silent until the user explicitly checks in Settings.
 struct UpdateStatusState(Mutex<Option<ManualUpdateResult>>);
 
+/// Strict cookies returned by the localhost launch-token exchange. The shell
+/// stages a Lax copy for the first native top-level navigation, then restores
+/// these exact server attributes as soon as the authenticated page finishes.
+struct PendingAuthCookies(Mutex<Vec<Cookie<'static>>>);
+
 /// Where the app writes its diagnostics (the OS app-log directory).
 static LOG_PATH: OnceLock<PathBuf> = OnceLock::new();
 
@@ -759,6 +765,195 @@ fn web_server_args(context_overlay: &Path, supports_no_open: bool) -> Vec<OsStri
     args
 }
 
+#[derive(Debug)]
+struct ServerNavigation {
+    target: tauri::Url,
+    cookies: Vec<Cookie<'static>>,
+}
+
+fn is_loopback_http_url(url: &tauri::Url) -> bool {
+    let Some(host) = url.host_str() else {
+        return false;
+    };
+    let loopback = host.eq_ignore_ascii_case("localhost")
+        || host
+            .parse::<IpAddr>()
+            .is_ok_and(|address| address.is_loopback());
+    url.scheme() == "http" && loopback
+}
+
+fn server_url_from_line(line: &str) -> Option<tauri::Url> {
+    let at = line.find(URL_LINE_PREFIX)?;
+    let raw = line[at + URL_LINE_PREFIX.len()..]
+        .split_whitespace()
+        .next()?;
+    let url = raw.parse::<tauri::Url>().ok()?;
+    is_loopback_http_url(&url).then_some(url)
+}
+
+fn redact_launch_tokens(line: &str) -> String {
+    let mut safe = line.to_owned();
+    let mut search_from = 0;
+    while let Some(relative) = safe[search_from..].find("token=") {
+        let value_start = search_from + relative + "token=".len();
+        let value_end = safe[value_start..]
+            .find(|character: char| {
+                character == '&' || character == ')' || character.is_whitespace()
+            })
+            .map(|relative_end| value_start + relative_end)
+            .unwrap_or(safe.len());
+        safe.replace_range(value_start..value_end, "[redacted]");
+        search_from = value_start + "[redacted]".len();
+    }
+    safe
+}
+
+fn webview_bootstrap_cookie(cookie: &Cookie<'static>) -> Cookie<'static> {
+    let mut bootstrap = cookie.clone();
+    if bootstrap.same_site() == Some(cookie::SameSite::Strict) {
+        // A native WebView navigation begins outside the localhost site, so a
+        // Strict cookie is intentionally withheld from that first request.
+        // Lax permits only this top-level safe request; on_page_load restores
+        // the server's original Strict attribute before normal interaction.
+        bootstrap.set_same_site(cookie::SameSite::Lax);
+    }
+    bootstrap
+}
+
+/// Exchange the process launch token outside the WebView, then transfer the
+/// server's signed, HttpOnly cookie into the WebView cookie store. This avoids
+/// depending on redirect/SameSite behavior when navigating from the bundled
+/// `tauri://` splash origin to a newly allocated localhost origin.
+fn prepare_server_navigation(launch_url: tauri::Url) -> Result<ServerNavigation, String> {
+    let has_launch_token = launch_url.query_pairs().any(|(name, _)| name == "token");
+    if !has_launch_token {
+        return Ok(ServerNavigation {
+            target: launch_url,
+            cookies: Vec::new(),
+        });
+    }
+
+    let host = launch_url
+        .host_str()
+        .ok_or_else(|| "本地服务器就绪 URL 缺少主机名".to_string())?
+        .to_owned();
+    let port = launch_url.port_or_known_default().unwrap_or(80);
+    let address = (host.as_str(), port)
+        .to_socket_addrs()
+        .map_err(|_| "无法解析本地服务器地址".to_string())?
+        .find(|address| address.ip().is_loopback())
+        .ok_or_else(|| "本地服务器地址不是回环地址".to_string())?;
+    let timeout = Duration::from_secs(8);
+    let mut stream = TcpStream::connect_timeout(&address, timeout)
+        .map_err(|_| "无法连接本地服务器完成浏览器认证".to_string())?;
+    stream
+        .set_read_timeout(Some(timeout))
+        .and_then(|_| stream.set_write_timeout(Some(timeout)))
+        .map_err(|_| "无法配置本地服务器认证连接".to_string())?;
+
+    let mut request_target = launch_url.path().to_owned();
+    if request_target.is_empty() {
+        request_target.push('/');
+    }
+    if let Some(query) = launch_url.query() {
+        request_target.push('?');
+        request_target.push_str(query);
+    }
+    let authority = if host.contains(':') {
+        format!("[{host}]:{port}")
+    } else {
+        format!("{host}:{port}")
+    };
+    let request = format!(
+        "GET {request_target} HTTP/1.1\r\nHost: {authority}\r\nConnection: close\r\nAccept: */*\r\n\r\n"
+    );
+    stream
+        .write_all(request.as_bytes())
+        .map_err(|_| "无法发送本地服务器认证请求".to_string())?;
+
+    const MAX_RESPONSE_HEADERS: usize = 64 * 1024;
+    let mut response = Vec::new();
+    let header_end = loop {
+        let mut chunk = [0_u8; 4096];
+        let length = stream
+            .read(&mut chunk)
+            .map_err(|_| "无法读取本地服务器认证响应".to_string())?;
+        if length == 0 {
+            break None;
+        }
+        response.extend_from_slice(&chunk[..length]);
+        if response.len() > MAX_RESPONSE_HEADERS {
+            return Err("本地服务器认证响应头过大".into());
+        }
+        if let Some(at) = response.windows(4).position(|window| window == b"\r\n\r\n") {
+            break Some(at);
+        }
+    }
+    .ok_or_else(|| "本地服务器认证响应不完整".to_string())?;
+    let headers = std::str::from_utf8(&response[..header_end])
+        .map_err(|_| "本地服务器认证响应头不是有效文本".to_string())?;
+    let mut lines = headers.split("\r\n");
+    let status = lines
+        .next()
+        .and_then(|line| line.split_whitespace().nth(1))
+        .and_then(|value| value.parse::<u16>().ok())
+        .ok_or_else(|| "本地服务器认证响应状态无效".to_string())?;
+
+    if (200..300).contains(&status) {
+        // Compatibility with runtimes that accept a query-bearing URL without
+        // a cookie exchange.
+        return Ok(ServerNavigation {
+            target: launch_url,
+            cookies: Vec::new(),
+        });
+    }
+    if !(300..400).contains(&status) {
+        return Err(format!("本地服务器浏览器认证失败（HTTP {status}）"));
+    }
+
+    let mut location = None;
+    let mut set_cookies = Vec::new();
+    for line in lines {
+        let Some((name, value)) = line.split_once(':') else {
+            continue;
+        };
+        let value = value.trim();
+        if name.eq_ignore_ascii_case("location") {
+            location = Some(value.to_owned());
+        } else if name.eq_ignore_ascii_case("set-cookie") {
+            set_cookies.push(value.to_owned());
+        }
+    }
+    let location = location.ok_or_else(|| "本地服务器认证响应缺少跳转地址".to_string())?;
+    let target = launch_url
+        .join(&location)
+        .map_err(|_| "本地服务器认证跳转地址无效".to_string())?;
+    if target.origin() != launch_url.origin() {
+        return Err("本地服务器认证拒绝跳转到其他来源".into());
+    }
+
+    let mut cookies = Vec::new();
+    for raw in set_cookies {
+        let parsed =
+            Cookie::parse(raw).map_err(|_| "本地服务器返回了无法解析的认证 Cookie".to_string())?;
+        let needs_domain = parsed.domain().is_none();
+        let needs_path = parsed.path().is_none();
+        let mut builder = Cookie::build(parsed);
+        if needs_domain {
+            builder = builder.domain(host.clone());
+        }
+        if needs_path {
+            builder = builder.path("/");
+        }
+        cookies.push(builder.build().into_owned());
+    }
+    if cookies.is_empty() {
+        return Err("本地服务器认证响应没有设置浏览器 Cookie".into());
+    }
+
+    Ok(ServerNavigation { target, cookies })
+}
+
 /// Run the bundled runtime's `ensure-fallback.mjs` so the Cordis loader can
 /// resolve bundle packages from `$DSH_HOME/profiles`.
 fn run_ensure_fallback(node: &Path, root: &Path, dsh_home: Option<&str>) -> Result<(), String> {
@@ -898,27 +1093,96 @@ fn spawn_server(
                 Ok(line) => line,
                 Err(_) => break,
             };
-            log(&format!("[dsh-server:out] {line}"));
+            log(&format!("[dsh-server:out] {}", redact_launch_tokens(&line)));
             if navigated {
                 continue;
             }
-            if let Some(at) = line.find(URL_LINE_PREFIX) {
-                let rest = line[at + URL_LINE_PREFIX.len()..].trim();
-                if let Some(url) = rest.split_whitespace().next() {
-                    if url.starts_with("http://") {
-                        navigated = true;
-                        let target = window.clone();
-                        let url = url.to_string();
-                        let _ = app_handle.run_on_main_thread(move || {
-                            if let Ok(parsed) = url.parse() {
-                                let _ = target.navigate(parsed);
-                            }
-                        });
+            if !line.contains(URL_LINE_PREFIX) {
+                continue;
+            }
+            navigated = true;
+            let Some(launch_url) = server_url_from_line(&line) else {
+                fail_on_main_thread(
+                    app_handle.clone(),
+                    window.clone(),
+                    "本地服务器返回了无效的就绪地址".into(),
+                );
+                continue;
+            };
+            let target = window.clone();
+            let navigation_app = app_handle.clone();
+            let navigation = match prepare_server_navigation(launch_url) {
+                Ok(navigation) => navigation,
+                Err(message) => {
+                    fail_on_main_thread(navigation_app, target, message);
+                    continue;
+                }
+            };
+            let ServerNavigation {
+                target: destination,
+                cookies,
+            } = navigation;
+            if !cookies.is_empty() {
+                let pending = navigation_app.state::<PendingAuthCookies>();
+                match pending.0.lock() {
+                    Ok(mut stored) => *stored = cookies.clone(),
+                    Err(_) => {
+                        fail_on_main_thread(
+                            navigation_app.clone(),
+                            target.clone(),
+                            "无法保存桌面 WebView 的认证状态".into(),
+                        );
+                        continue;
                     }
+                };
+            }
+            let mut cookie_error = false;
+            for cookie in cookies {
+                if target
+                    .set_cookie(webview_bootstrap_cookie(&cookie))
+                    .is_err()
+                {
+                    cookie_error = true;
+                    break;
                 }
             }
+            if cookie_error {
+                if let Ok(mut stored) = navigation_app.state::<PendingAuthCookies>().0.lock() {
+                    stored.clear();
+                }
+                fail_on_main_thread(
+                    navigation_app,
+                    target,
+                    "无法把本地服务器认证写入桌面 WebView".into(),
+                );
+                continue;
+            }
+            let scheduler = navigation_app.clone();
+            let failure_app = navigation_app.clone();
+            let failure_window = target.clone();
+            if scheduler
+                .run_on_main_thread(move || {
+                    if target.navigate(destination).is_err() {
+                        fail(
+                            &failure_app,
+                            &failure_window,
+                            "启动失败",
+                            "无法打开本地服务器页面",
+                        );
+                    }
+                })
+                .is_err()
+            {
+                log("[fatal] 无法调度本地服务器页面导航");
+            }
         }
-        // stdout EOF: the server process exited.
+        if !navigated {
+            fail_on_main_thread(
+                app_handle,
+                window,
+                "本地服务器在就绪前退出；详情已写入 dsh-desktop.log".into(),
+            );
+        }
     });
 
     Ok(child)
@@ -1372,6 +1636,16 @@ fn fail(app: &AppHandle, window: &WebviewWindow, title: &str, message: &str) {
         .show(|_| {});
 }
 
+fn fail_on_main_thread(app: AppHandle, window: WebviewWindow, message: String) {
+    let scheduler = app.clone();
+    if scheduler
+        .run_on_main_thread(move || fail(&app, &window, "启动失败", &message))
+        .is_err()
+    {
+        log("[fatal] 无法在主线程显示启动错误");
+    }
+}
+
 fn urlencode(value: &str) -> String {
     let mut out = String::with_capacity(value.len());
     for byte in value.bytes() {
@@ -1407,6 +1681,22 @@ pub fn run() {
         ])
         .on_page_load(|webview, payload| {
             if matches!(payload.event(), tauri::webview::PageLoadEvent::Finished) {
+                if is_loopback_http_url(payload.url()) {
+                    if let Some(pending) = webview.try_state::<PendingAuthCookies>() {
+                        let cookies = match pending.0.lock() {
+                            Ok(mut stored) => std::mem::take(&mut *stored),
+                            Err(_) => {
+                                log("[fatal] WebView 认证状态锁已损坏");
+                                Vec::new()
+                            }
+                        };
+                        for cookie in cookies {
+                            if webview.set_cookie(cookie).is_err() {
+                                log("[fatal] 无法恢复 WebView Cookie 的 Strict 属性");
+                            }
+                        }
+                    }
+                }
                 let _ = webview.eval(PAGE_SHIM);
             }
         })
@@ -1425,6 +1715,7 @@ pub fn run() {
                 .get_webview_window("main")
                 .expect("main window missing from config");
             app.manage(UpdateStatusState(Mutex::new(None)));
+            app.manage(PendingAuthCookies(Mutex::new(Vec::new())));
 
             // Keep recovery independent from the bundled DSH/Node runtime.
             // A broken runtime is exactly when an in-app update is most useful.
@@ -1474,9 +1765,19 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use std::{env, ffi::OsStr, path::Path};
+    use std::{
+        env,
+        ffi::OsStr,
+        io::{Read, Write},
+        net::TcpListener,
+        path::Path,
+        thread,
+    };
 
-    use super::{desktop_context_overlay, web_server_args, DESKTOP_CONTEXT_PLUGIN};
+    use super::{
+        desktop_context_overlay, prepare_server_navigation, redact_launch_tokens,
+        server_url_from_line, web_server_args, webview_bootstrap_cookie, DESKTOP_CONTEXT_PLUGIN,
+    };
 
     const OVERLAY: &str = "/tmp/dsh desktop/context.patch.json";
 
@@ -1541,5 +1842,79 @@ mod tests {
         assert!(DESKTOP_CONTEXT_PLUGIN.contains("defaults to `~/.dsh-desktop`"));
         assert!(DESKTOP_CONTEXT_PLUGIN.contains("may be overridden"));
         assert!(DESKTOP_CONTEXT_PLUGIN.contains("do not assume `~/.dsh`"));
+    }
+
+    #[test]
+    fn readiness_url_parser_preserves_the_launch_token_and_rejects_non_loopback_hosts() {
+        let parsed = server_url_from_line(
+            "prefix dsh web: http://127.0.0.1:4321/?token=launch-secret trailing",
+        )
+        .expect("loopback readiness URL must parse");
+        assert_eq!(parsed.port(), Some(4321));
+        assert_eq!(parsed.query(), Some("token=launch-secret"));
+        assert!(server_url_from_line("dsh web: http://example.com/?token=secret").is_none());
+    }
+
+    #[test]
+    fn launch_tokens_are_redacted_from_every_logged_url() {
+        let safe = redact_launch_tokens(
+            "dsh web: http://127.0.0.1:1/?token=first (LAN: http://10.0.0.2:1/?token=second)",
+        );
+        assert!(!safe.contains("first"));
+        assert!(!safe.contains("second"));
+        assert_eq!(safe.matches("token=[redacted]").count(), 2);
+    }
+
+    #[test]
+    fn browser_auth_is_exchanged_before_webview_navigation() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("test server must bind");
+        let address = listener.local_addr().expect("test server needs an address");
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("test request must arrive");
+            let mut request = [0_u8; 2048];
+            let length = stream.read(&mut request).expect("request must be readable");
+            let request = String::from_utf8_lossy(&request[..length]);
+            assert!(request.starts_with("GET /?token=launch-secret HTTP/1.1"));
+            stream
+                .write_all(
+                    b"HTTP/1.1 303 See Other\r\n\
+Location: /\r\n\
+Set-Cookie: dsh-auth=signed; Max-Age=60; Path=/; HttpOnly; SameSite=Strict\r\n\
+Content-Length: 0\r\n\
+Connection: close\r\n\r\n",
+                )
+                .expect("response must be writable");
+        });
+        let launch = format!("http://{address}/?token=launch-secret")
+            .parse()
+            .expect("launch URL must parse");
+
+        let navigation = prepare_server_navigation(launch).expect("token exchange must succeed");
+        server.join().expect("test server must finish");
+
+        assert_eq!(navigation.target.as_str(), format!("http://{address}/"));
+        assert_eq!(navigation.cookies.len(), 1);
+        assert_eq!(navigation.cookies[0].name(), "dsh-auth");
+        assert_eq!(navigation.cookies[0].value(), "signed");
+        assert_eq!(navigation.cookies[0].domain(), Some("127.0.0.1"));
+        assert_eq!(navigation.cookies[0].path(), Some("/"));
+        assert_eq!(navigation.cookies[0].http_only(), Some(true));
+        assert_eq!(
+            navigation.cookies[0].same_site(),
+            Some(cookie::SameSite::Strict)
+        );
+        let bootstrap = webview_bootstrap_cookie(&navigation.cookies[0]);
+        assert_eq!(bootstrap.same_site(), Some(cookie::SameSite::Lax));
+    }
+
+    #[test]
+    fn legacy_readiness_urls_navigate_without_an_auth_exchange() {
+        let launch = "http://127.0.0.1:4321/"
+            .parse()
+            .expect("legacy URL must parse");
+        let navigation =
+            prepare_server_navigation(launch).expect("legacy navigation must remain supported");
+        assert_eq!(navigation.target.as_str(), "http://127.0.0.1:4321/");
+        assert!(navigation.cookies.is_empty());
     }
 }
