@@ -8,6 +8,35 @@ DeepSeek Harness 上游版本，以便复现构建和排查兼容性问题。
 
 ## [Unreleased]
 
+## [0.1.19] - 2026-09-02
+
+### 桌面端
+
+- 无桌面壳代码变更；此版本用于同步上游 DeepSeek Harness。
+
+### 内置 DeepSeek Harness
+
+- 版本：`dsh-v0.1.2-alpha.3` → `dsh-v0.1.2-alpha.4`
+- Commit：`4e84901e6471b79ec0338099867ebb4606d12bb5`
+- [上游 Release Notes](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.2-alpha.4)
+
+#### 新增功能
+
+* 父 Agent 与可持续子 Agent 可通过 `send_message` 双向传递后续消息，取代单向 `report` 工具 @Dudu-0223
+
+#### 体验优化
+
+* 自定义模型发现复用 Profile 请求头；模型目录支持搜索和筛选 @LegGasai
+* 界面优化圆角、描边、轮次导航、投影效果 @yixiangihsiang, @LegGasai
+* 改善超长会话在流式回复、界面布局、导航预览场景的渲染开销 @imccyu
+
+#### 其他变更
+
+* Python SDK、Headless、ACP 与自定义 Profile 默认提供 `web_fetch` @koalazf99
+* Web PTC Mode 默认不再向模型提供通用 `workflow` 工具 @koalazf99
+* `Session.events` 被按需读取 API `seq`、`eventAt()` 和 `snapshotEvents()` 取代 @kermanx
+* `SessionSeq` / `SessionLogOffset` 强类型区分，请开发者关注兼容性 @tianyicui
+
 ## [0.1.18] - 2026-09-02
 
 ### 桌面端
@@ -553,5 +582,7 @@ DeepSeek Harness 上游版本，以便复现构建和排查兼容性问题。
 
 [0.1.17]: https://github.com/314857493/dsh-desktop/compare/v0.1.16...v0.1.17
 
-[Unreleased]: https://github.com/314857493/dsh-desktop/compare/v0.1.18...HEAD
 [0.1.18]: https://github.com/314857493/dsh-desktop/compare/v0.1.17...v0.1.18
+
+[Unreleased]: https://github.com/314857493/dsh-desktop/compare/v0.1.19...HEAD
+[0.1.19]: https://github.com/314857493/dsh-desktop/compare/v0.1.18...v0.1.19
