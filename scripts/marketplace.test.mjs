@@ -25,7 +25,10 @@ function writeJson(path, value) {
   writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`)
 }
 
-function createFixture(t, { structuredProfileTemplate = false } = {}) {
+function createFixture(t, {
+  structuredProfileTemplate = false,
+  seedVersion = SEED_VERSION,
+} = {}) {
   const root = mkdtempSync(join(tmpdir(), 'dsh-desktop-marketplace-test-'))
   t.after(() => rmSync(root, { recursive: true, force: true }))
   const runtime = join(root, 'rt')
@@ -37,11 +40,11 @@ function createFixture(t, { structuredProfileTemplate = false } = {}) {
     schemaVersion: 1,
     package: 'dshmarket',
     requested: 'latest',
-    version: SEED_VERSION,
+    version: seedVersion,
   })
   writeJson(join(seedPackage, 'package.json'), {
     name: 'dshmarket',
-    version: SEED_VERSION,
+    version: seedVersion,
     dsh: { bundle: { patch: 'cordis.patch.yml' } },
   })
   writeFileSync(join(seedPackage, 'cordis.patch.yml'), '- insert: []\n')
@@ -221,6 +224,63 @@ test('an existing profile-managed marketplace version is never overwritten', asy
   assert.equal(readFileSync(join(installed, 'user-version.txt'), 'utf8'), 'keep me\n')
 })
 
+test('an older registry version is refreshed and pinned when its declared range allows the seed', async (t) => {
+  const fixture = createFixture(t)
+  initializeProfile(fixture.profileDir, {
+    dependencies: { dshmarket: '^1.0.0' },
+    marketplaceBundle: true,
+  })
+  const installed = writeInstalledMarketplace(fixture.profileDir, '1.0.0')
+  writeFileSync(join(installed, 'obsolete.txt'), 'old registry package\n')
+
+  const result = await ensureMarketplace(fixture.runtime, fixture.home)
+
+  assert.equal(result.status, 'updated')
+  assert.equal(result.version, SEED_VERSION)
+  assert.equal(profileManifest(fixture.profileDir).dependencies.dshmarket, SEED_VERSION)
+  assert.ok(!existsSync(join(installed, 'obsolete.txt')))
+  assert.equal(readFileSync(join(installed, 'seed.txt'), 'utf8'), 'bundled seed\n')
+})
+
+test('a previously copied current seed with an old range is pinned without recopying', async (t) => {
+  const fixture = createFixture(t)
+  initializeProfile(fixture.profileDir, {
+    dependencies: { dshmarket: '^1.0.0' },
+    marketplaceBundle: true,
+  })
+  const installed = writeInstalledMarketplace(fixture.profileDir, SEED_VERSION)
+  writeJson(join(installed, MARKETPLACE_SEED_OWNERSHIP), {
+    schemaVersion: 1,
+    package: 'dshmarket',
+    version: SEED_VERSION,
+  })
+  writeFileSync(join(installed, 'previous-migration.txt'), 'preserve me\n')
+
+  const result = await ensureMarketplace(fixture.runtime, fixture.home)
+
+  assert.equal(result.status, 'repaired')
+  assert.equal(result.version, SEED_VERSION)
+  assert.equal(profileManifest(fixture.profileDir).dependencies.dshmarket, SEED_VERSION)
+  assert.equal(readFileSync(join(installed, 'previous-migration.txt'), 'utf8'), 'preserve me\n')
+})
+
+test('an exact older registry version is preserved as an explicit user selection', async (t) => {
+  const fixture = createFixture(t)
+  initializeProfile(fixture.profileDir, {
+    dependencies: { dshmarket: '1.0.0' },
+    marketplaceBundle: true,
+  })
+  const installed = writeInstalledMarketplace(fixture.profileDir, '1.0.0')
+  writeFileSync(join(installed, 'user-version.txt'), 'keep exact version\n')
+
+  const result = await ensureMarketplace(fixture.runtime, fixture.home)
+
+  assert.equal(result.status, 'alreadyInstalled')
+  assert.equal(result.version, '1.0.0')
+  assert.equal(profileManifest(fixture.profileDir).dependencies.dshmarket, '1.0.0')
+  assert.equal(readFileSync(join(installed, 'user-version.txt'), 'utf8'), 'keep exact version\n')
+})
+
 test('an older desktop-owned seed is refreshed after the bundled runtime updates', async (t) => {
   const fixture = createFixture(t)
   initializeProfile(fixture.profileDir, {
@@ -249,25 +309,96 @@ test('an older desktop-owned seed is refreshed after the bundled runtime updates
   assert.equal(ownership.version, SEED_VERSION)
 })
 
-test('a stale owned package is preserved after its dependency was user-selected', async (t) => {
+test('a newer user-selected range package is never downgraded to the bundled seed', async (t) => {
   const fixture = createFixture(t)
   initializeProfile(fixture.profileDir, {
     dependencies: { dshmarket: '^1.0.0' },
     marketplaceBundle: true,
   })
-  const installed = writeInstalledMarketplace(fixture.profileDir, '1.0.0')
+  const installed = writeInstalledMarketplace(fixture.profileDir, '1.3.0')
   writeJson(join(installed, MARKETPLACE_SEED_OWNERSHIP), {
     schemaVersion: 1,
     package: 'dshmarket',
-    version: '1.0.0',
+    version: '1.3.0',
   })
   writeFileSync(join(installed, 'user-version.txt'), 'keep me\n')
 
   const result = await ensureMarketplace(fixture.runtime, fixture.home)
 
   assert.equal(result.status, 'alreadyInstalled')
+  assert.equal(result.version, '1.3.0')
   assert.equal(profileManifest(fixture.profileDir).dependencies.dshmarket, '^1.0.0')
   assert.equal(readFileSync(join(installed, 'user-version.txt'), 'utf8'), 'keep me\n')
+})
+
+test('a numerically newer prerelease is never downgraded to the bundled seed', async (t) => {
+  const fixture = createFixture(t, { seedVersion: '1.2.3-beta.2' })
+  initializeProfile(fixture.profileDir, {
+    dependencies: { dshmarket: '^1.2.3-beta.1' },
+    marketplaceBundle: true,
+  })
+  const installed = writeInstalledMarketplace(fixture.profileDir, '1.2.3-beta.10')
+  writeFileSync(join(installed, 'user-version.txt'), 'keep newer prerelease\n')
+
+  const result = await ensureMarketplace(fixture.runtime, fixture.home)
+
+  assert.equal(result.status, 'alreadyInstalled')
+  assert.equal(result.version, '1.2.3-beta.10')
+  assert.equal(profileManifest(fixture.profileDir).dependencies.dshmarket, '^1.2.3-beta.1')
+  assert.equal(readFileSync(join(installed, 'user-version.txt'), 'utf8'), 'keep newer prerelease\n')
+})
+
+test('a prerelease seed outside the declared stable range is never installed', async (t) => {
+  const fixture = createFixture(t, { seedVersion: '1.3.0-beta.1' })
+  initializeProfile(fixture.profileDir, {
+    dependencies: { dshmarket: '^1.2.3' },
+    marketplaceBundle: true,
+  })
+  const installed = writeInstalledMarketplace(fixture.profileDir, '1.2.3')
+  writeFileSync(join(installed, 'stable-version.txt'), 'keep stable version\n')
+
+  const result = await ensureMarketplace(fixture.runtime, fixture.home)
+
+  assert.equal(result.status, 'alreadyInstalled')
+  assert.equal(result.version, '1.2.3')
+  assert.equal(profileManifest(fixture.profileDir).dependencies.dshmarket, '^1.2.3')
+  assert.equal(readFileSync(join(installed, 'stable-version.txt'), 'utf8'), 'keep stable version\n')
+})
+
+test('a newer prerelease with the same core tuple is allowed by a prerelease range', async (t) => {
+  const fixture = createFixture(t, { seedVersion: '1.2.3-beta.2' })
+  initializeProfile(fixture.profileDir, {
+    dependencies: { dshmarket: '^1.2.3-beta.1' },
+    marketplaceBundle: true,
+  })
+  const installed = writeInstalledMarketplace(fixture.profileDir, '1.2.3-beta.1')
+
+  const result = await ensureMarketplace(fixture.runtime, fixture.home)
+
+  assert.equal(result.status, 'updated')
+  assert.equal(result.version, '1.2.3-beta.2')
+  assert.equal(profileManifest(fixture.profileDir).dependencies.dshmarket, '1.2.3-beta.2')
+  assert.equal(readFileSync(join(installed, 'seed.txt'), 'utf8'), 'bundled seed\n')
+})
+
+test('a prerelease seed is not included by the wildcard range', async (t) => {
+  const fixture = createFixture(t, { seedVersion: '1.3.0-beta.1' })
+  initializeProfile(fixture.profileDir, {
+    dependencies: { dshmarket: '*' },
+    marketplaceBundle: true,
+  })
+  const installed = writeInstalledMarketplace(fixture.profileDir, '1.2.3')
+  writeFileSync(join(installed, 'stable-version.txt'), 'keep wildcard stable version\n')
+
+  const result = await ensureMarketplace(fixture.runtime, fixture.home)
+
+  assert.equal(result.status, 'alreadyInstalled')
+  assert.equal(result.version, '1.2.3')
+  assert.equal(profileManifest(fixture.profileDir).dependencies.dshmarket, '*')
+  assert.equal(
+    readFileSync(join(installed, 'stable-version.txt'), 'utf8'),
+    'keep wildcard stable version\n',
+  )
 })
 
 test('an active package with a missing dependency entry is re-registered without overwrite', async (t) => {
