@@ -8,6 +8,22 @@ DeepSeek Harness 上游版本，以便复现构建和排查兼容性问题。
 
 ## [Unreleased]
 
+## [0.1.20] - 2026-09-03
+
+### 桌面端
+
+- 无桌面壳代码变更；此版本用于同步上游 DeepSeek Harness。
+
+### 内置 DeepSeek Harness
+
+- 版本：`dsh-v0.1.2-alpha.4` → `dsh-v0.1.2-alpha.5`
+- Commit：`db6bdc3576c2d4e7c965e8e3ed0c2a731eed87f5`
+- [上游 Release Notes](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.2-alpha.5)
+
+#### 问题修复
+
+* 修复从 `0.1.1-rc.2` 或 `0.1.2-alpha.3` 升级时，应用可能启动失败或者会话列表标题丢失的问题 @imccyu
+
 ## [0.1.19] - 2026-09-02
 
 ### 桌面端
@@ -584,5 +600,7 @@ DeepSeek Harness 上游版本，以便复现构建和排查兼容性问题。
 
 [0.1.18]: https://github.com/314857493/dsh-desktop/compare/v0.1.17...v0.1.18
 
-[Unreleased]: https://github.com/314857493/dsh-desktop/compare/v0.1.19...HEAD
 [0.1.19]: https://github.com/314857493/dsh-desktop/compare/v0.1.18...v0.1.19
+
+[Unreleased]: https://github.com/314857493/dsh-desktop/compare/v0.1.20...HEAD
+[0.1.20]: https://github.com/314857493/dsh-desktop/compare/v0.1.19...v0.1.20
