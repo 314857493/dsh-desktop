@@ -21,10 +21,11 @@
  * Artifact: src-tauri/target/release/bundle/nsis/DSH Desktop_*_x64-setup.exe
  */
 import { spawnSync } from 'node:child_process'
-import { chmodSync, copyFileSync, cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, delimiter, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { prepareNodeRuntime } from './node-runtime.mjs'
 
 const IS_WIN = process.platform === 'win32'
 const NODE_BIN = IS_WIN ? 'node.exe' : 'node'
@@ -174,98 +175,6 @@ if (PACKAGE_ONLY) {
   REPO = fetchRemote()
 }
 
-// ---------- node-runtime: core Node copied from the system install (no download) ----------
-function resolveUserNodeDir() {
-  if (!IS_WIN) {
-    // Unix: the node running this script is a system install; use its real
-    // path (resolves through symlinks such as homebrew/volta shims).
-    try {
-      return dirname(realpathSync(process.execPath))
-    } catch {
-      return null
-    }
-  }
-  // Persistent installs first (fnm node-versions, Program Files) — skip
-  // ephemeral PATH shims (fnm multishell) so the result survives shell sessions.
-  const candidates = []
-  for (const base of [process.env.APPDATA, process.env.LOCALAPPDATA]) {
-    if (!base) continue
-    const versions = join(base, 'fnm', 'node-versions')
-    if (!existsSync(versions)) continue
-    for (const entry of readdirSync(versions)) {
-      const dir = join(versions, entry, 'installation')
-      if (existsSync(join(dir, 'node.exe'))) candidates.push(dir)
-    }
-  }
-  if (candidates.length > 0) {
-    candidates.sort((a, b) => {
-      const v = (p) => (basename(dirname(p)).match(/\d+(?:\.\d+)*/g) ?? []).join('.')
-      return v(b).localeCompare(v(a), undefined, { numeric: true })
-    })
-    return candidates[0]
-  }
-  for (const dir of ['C:\\Program Files\\nodejs', 'C:\\Program Files (x86)\\nodejs']) {
-    if (existsSync(join(dir, 'node.exe'))) return dir
-  }
-  return null
-}
-
-// Only the files a bundled runtime needs: the node binary, npm/npx/corepack
-// and their own node_modules. This avoids dragging in the user's globally
-// installed packages (fnm's node_modules can hold hundreds of MB of globals).
-const NODE_ESSENTIAL_FILES = IS_WIN
-  ? [
-      'node.exe', 'npm', 'npm.cmd', 'npm.ps1', 'npx', 'npx.cmd', 'npx.ps1',
-      'corepack', 'corepack.cmd', 'nodevars.bat', 'install_tools.bat',
-      'LICENSE', 'CHANGELOG.md', 'README.md',
-    ]
-  : [
-      'node', 'npm', 'npx', 'corepack',
-      'LICENSE', 'CHANGELOG.md', 'README.md',
-    ]
-const NODE_ESSENTIAL_MODULES = ['npm', 'corepack']
-
-function ensureNodeRuntime() {
-  if (existsSync(join(nodeRuntime, NODE_BIN))) {
-    console.log(`node-runtime already present (${nodeRuntime})`)
-    return
-  }
-  const dir = resolveUserNodeDir()
-  if (!dir) {
-    fail('未找到系统 Node.js：无法生成 node-runtime。请先安装 Node.js >= 22，或手动把 node 目录放到 node-runtime/')
-  }
-  rmSync(nodeRuntime, { recursive: true, force: true })
-  mkdirSync(nodeRuntime, { recursive: true })
-  for (const name of NODE_ESSENTIAL_FILES) {
-    const from = join(dir, name)
-    if (!existsSync(from)) continue
-    if (!IS_WIN) {
-      // On unix, npm/npx/corepack in the bin dir are often symlinks into
-      // ../lib/node_modules; copying the dereferenced file would yield a
-      // broken wrapper. The bundled node binary is what matters at runtime,
-      // so skip symlinked wrappers.
-      try {
-        if (!lstatSync(from).isFile()) continue
-      } catch {
-        continue
-      }
-    }
-    const to = join(nodeRuntime, name)
-    copyFileSync(from, to)
-    if (!IS_WIN && (name === 'node' || name === 'npm' || name === 'npx' || name === 'corepack')) {
-      try { chmodSync(to, 0o755) } catch {}
-    }
-  }
-  mkdirSync(join(nodeRuntime, 'node_modules'), { recursive: true })
-  for (const name of NODE_ESSENTIAL_MODULES) {
-    const from = join(dir, 'node_modules', name)
-    if (existsSync(from)) {
-      cpSync(from, join(nodeRuntime, 'node_modules', name), { recursive: true })
-    }
-  }
-  console.log(`node-runtime: core Node copied from ${dir}`)
-}
-
 const rtDir = join(PROJECT, 'rt')
 const backup = join(PROJECT, 'backup-pre-prune')
 const bundleRoot = join(PROJECT, 'src-tauri', 'target', 'release', 'bundle')
@@ -355,8 +264,8 @@ if (!PACKAGE_ONLY) {
   runNode('patch-runtime', join(here, 'patch-runtime.mjs'), [rtDir, REPO])
 
   // ---------- 3. ensure node + private package manager runtime ----------
-  step('5/13 ensure node-runtime (copy core Node from system)')
-  ensureNodeRuntime()
+  step('5/13 ensure node-runtime (copy active build Node)')
+  prepareNodeRuntime(nodeRuntime)
 
   // ---------- 4. marketplace ----------
   step('6/13 bundle plugin marketplace and private pnpm')
