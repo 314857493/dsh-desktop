@@ -8,6 +8,49 @@ DeepSeek Harness 上游版本，以便复现构建和排查兼容性问题。
 
 ## [Unreleased]
 
+## [0.1.22] - 2026-09-06
+
+### 桌面端
+
+- 无桌面壳代码变更；此版本用于同步上游 DeepSeek Harness。
+
+### 内置 DeepSeek Harness
+
+- 版本：`dsh-v0.1.2-rc.1` → `dsh-v0.1.3-alpha.1`
+- Commit：`d347e703908d0406b7a7ef80e3a0e594d86b2215`
+- [上游 Release Notes](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.3-alpha.1)
+
+#### 新增功能
+
+* Web 支持上传任意类型的通用文件：文件与图片可在同一预览区混排，后台上传支持进度、取消与会话切换续显，模型可通过已保存路径使用现有文件工具按需读取。 @CreatixChu
+* 所有出站网络请求都会遵循启动环境中的 `HTTP_PROXY`、`HTTPS_PROXY`、`ALL_PROXY` 与 `NO_PROXY` 配置。 @LegGasai
+* Python SDK 新增 macOS x64 runtime wheel，可在 Intel 架构的 Mac 上安装并运行随包 runtime。 @koalazf99
+* `read_image` 的顶层与 PTC 嵌套工具调用会在 Web 工具卡中直接渲染图片，不再展示原始附件对象。 @Chinesezjc
+* 模型探测新增对自定义模型提供商 `models` 对象和 Anthropic 原生模型列表的支持，并支持回填模型名称、上下文窗口及最大输出 token 的回填。 @LegGasai
+
+#### 问题修复
+
+* 在 Web 中手动暂停目标会立即终止当前模型轮次，避免运行中的模型继续执行或在同一轮恢复目标。 @mektpoy
+* 修复 DeepSeek 流式工具调用的续传分片用空值覆盖调用 ID 或名称的问题，避免工具以空名称失败并写入无法重新打开的会话记录。 @LegGasai
+* 修复 Python SDK 单文件 runtime 将 Bash 中以 `node` 开头的命令错误重写为 dsh runtime 的问题。 @imccyu
+* 修复从会话搜索结果进入会话后仍停留在搜索界面的问题；目标会话会在所属 Workspace 中展开并滚动到可见位置。 @Dudu-0223
+* 修复 Windows 盘符根目录 Workspace 的路径分隔符、标题与绝对路径校验，确保盘符根目录可以正常使用。 @turtle1999
+* 修复 Session 缓存读取问题。 @imccyu
+
+#### 体验优化
+
+* Skill 选择器支持模糊搜索；优化聊天气泡中的的 Skill 和命令引用。 @LegGasai
+* 统一会话内可点击链接的颜色、hover/focus 样式和分类图标，优化 Markdown 链接、文件引用、网页来源、产物链接与 Workflow 成员链接的辨识度。 @yixiangihsiang
+* 统一未观察文件写入与编辑失败的 `FS_NOT_OBSERVED` 诊断，保留文件路径、结构化错误码和原始原因。 @turtle1999
+* Windows 上的本地非终端子进程不再弹出控制台窗口。 @turtle1999
+* Agent Team 的 `send_message` 统一采用 steer 语义，并在跨 Agent 和冷恢复投递中保留发送者归属与顺序。 @Dudu-0223
+
+#### 其他变更
+
+* **破坏性变更：**Session persistence API 改为由生命周期持有的 `SessionHandle`；`agentLoop.create()` 改为异步，新增session锁，同一session至多被一个进程持有。 @turtle1999
+* Session format 升级至 v2：旧 v0/v1 日志通过不可变的相邻 generation 迁移到当前格式，Assistant 流按 attempt 聚合进持久化 settlement，同时 Web 保持实时增量显示。 @tianyicui
+* 已知的性能缺陷：本版本存在一项已知的性能回退，可能影响部分历史session加载的响应速度；我们将在下一个版本中修复。
+
 ## [0.1.21] - 2026-09-04
 
 ### 桌面端
@@ -703,5 +746,7 @@ DeepSeek Harness 上游版本，以便复现构建和排查兼容性问题。
 
 [0.1.20]: https://github.com/314857493/dsh-desktop/compare/v0.1.19...v0.1.20
 
-[Unreleased]: https://github.com/314857493/dsh-desktop/compare/v0.1.21...HEAD
 [0.1.21]: https://github.com/314857493/dsh-desktop/compare/v0.1.20...v0.1.21
+
+[Unreleased]: https://github.com/314857493/dsh-desktop/compare/v0.1.22...HEAD
+[0.1.22]: https://github.com/314857493/dsh-desktop/compare/v0.1.21...v0.1.22
