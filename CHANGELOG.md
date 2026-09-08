@@ -8,6 +8,82 @@ DeepSeek Harness 上游版本，以便复现构建和排查兼容性问题。
 
 ## [Unreleased]
 
+## [0.1.23] - 2026-09-08
+
+### 桌面端
+
+- 无桌面壳代码变更；此版本用于同步上游 DeepSeek Harness。
+
+### 内置 DeepSeek Harness
+
+- 版本：`dsh-v0.1.3-alpha.1` → `dsh-v0.1.3-alpha.2`
+- Commit：`82a5fd61a7cf5c293cec4bdff68f455398d685e9`
+- [上游 Release Notes](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.3-alpha.2)
+
+### 0.1.3-alpha.2 · 中文
+
+#### 新增功能
+
+- 升级 pi-ai 到 0.85.1，支持新模型。 — @tianyicui
+- Web 顶栏新增“在应用中打开”，可用已安装的编辑器、IDE、终端或文件管理器等打开 Workspace。 — @yixiangihsiang
+- 可继续对话的子代理支持消息排队、编辑、删除、单条或全部 Steer，以及停止操作。 — @Dudu-0223
+- PTC 模式下支持展开查看命令及其输出。 — @tianyicui
+
+#### 问题修复
+
+- 修复 Web 断线后无法自动恢复的问题。 — @LegGasai
+- 修复发送消息或调整窗口后，聊天不再自动滚动到底部的问题。 — @tianyicui
+- 修复 Windows 上 Python SDK 运行时可能出现的启动崩溃。 — @tianyicui
+- 改善 Windows 和部分 Linux 环境下的进程清理，减少任务停止后的后台进程残留。 — @pku-xht
+
+#### 体验优化
+
+- 改善长会话打开、恢复和持续对话时的卡顿，降低内存占用。 — @imccyu, @tianyicui, @Dudu-0223
+- 引用较长会话时，模型可按需读取预览中未展示的内容。 — @tianyicui
+- 排队消息新增“发送中”提示，发送完成前暂不可编辑、删除或 Steer。 — @LegGasai
+- 统一设置面板中标签、开关和插件状态的样式，改善浅色和深色主题下的显示效果。 — @LegGasai
+- 反馈可独立提交，无需继续对话；提交时会附带相关会话内容，普通聊天不会触发这类上报。 — @tianyicui, @Chinesezjc
+
+#### 其他变更
+
+- **默认工具调整:** SDK、Headless 和 ACP 默认使用 read、write、edit 编辑文件；Web minimal 和 sdk-minimal 保持不变。 — @koalazf99
+- 自定义 persona 配置拆分为前缀和后缀，旧配置及相关常量需要适配。 — @tianyicui
+- 普通 subprocess handle 移除 pid；终端 handle 不受影响。 — @pku-xht
+
+Full Changelog: https://github.com/deepseek-ai/deepseek-harness/compare/dsh-v0.1.3-alpha.1...dsh-v0.1.3-alpha.2
+
+### 0.1.3-alpha.2 · English
+
+#### New Features
+
+- Upgrade pi-ai to 0.85.1 that supports more new models. — by @tianyicui
+- Add “Open in” to the Web header to open the Workspace in an installed editor, IDE, terminal, file manager, or other supported application. — by @yixiangihsiang
+- Continuable subagents support message queuing, editing, deletion, Steer for individual or all queued messages, and Stop. — by @Dudu-0223
+- Allow commands and their output to be expanded in PTC mode. — by @tianyicui
+
+#### Bug Fixes
+
+- Fix Web connections failing to recover automatically after a disconnection. — by @LegGasai
+- Fix chat no longer scrolling to the bottom automatically after sending a message or resizing the window. — by @tianyicui
+- Fix a possible Python SDK runtime crash on startup on Windows. — by @tianyicui
+- Improve process cleanup on Windows and supported Linux environments, reducing leftover background processes after a task stops. — by @pku-xht
+
+#### Improvements
+
+- Reduce lag when opening, resuming, and continuing long conversations, and lower memory usage. — by @imccyu, @tianyicui, @Dudu-0223
+- When a long conversation is referenced, the model can read content omitted from the preview as needed. — by @tianyicui
+- Add a “Sending” indicator for queued messages; editing, deletion, and Steer are temporarily unavailable until sending completes. — by @LegGasai
+- Unify the styling of labels, switches, and plugin status indicators in the settings panel, improving their appearance in light and dark themes. — by @LegGasai
+- Submit feedback without continuing the conversation. Submissions include the relevant conversation content; ordinary chat does not trigger this reporting. — by @tianyicui, @Chinesezjc
+
+#### Other Changes
+
+- **Default tool changes:** SDK, Headless, and ACP use read, write, and edit for file editing by default; Web minimal and sdk-minimal are unchanged. — by @koalazf99
+- Custom persona configuration is split into a prefix and a suffix; existing configurations and related constants need to be updated. — by @tianyicui
+- Remove pid from ordinary subprocess handles; terminal handles are unaffected. — by @pku-xht
+
+Full Changelog: https://github.com/deepseek-ai/deepseek-harness/compare/dsh-v0.1.3-alpha.1...dsh-v0.1.3-alpha.2
+
 ## [0.1.22] - 2026-09-06
 
 ### 桌面端
@@ -748,5 +824,7 @@ DeepSeek Harness 上游版本，以便复现构建和排查兼容性问题。
 
 [0.1.21]: https://github.com/314857493/dsh-desktop/compare/v0.1.20...v0.1.21
 
-[Unreleased]: https://github.com/314857493/dsh-desktop/compare/v0.1.22...HEAD
 [0.1.22]: https://github.com/314857493/dsh-desktop/compare/v0.1.21...v0.1.22
+
+[Unreleased]: https://github.com/314857493/dsh-desktop/compare/v0.1.23...HEAD
+[0.1.23]: https://github.com/314857493/dsh-desktop/compare/v0.1.22...v0.1.23
