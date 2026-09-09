@@ -8,6 +8,74 @@ DeepSeek Harness 上游版本，以便复现构建和排查兼容性问题。
 
 ## [Unreleased]
 
+## [0.1.24] - 2026-09-09
+
+### 桌面端
+
+- 无桌面壳代码变更；此版本用于同步上游 DeepSeek Harness。
+
+### 内置 DeepSeek Harness
+
+- 版本：`dsh-v0.1.3-alpha.2` → `dsh-v0.1.5-alpha.1`
+- Commit：`5dda764ed3aa172535a7967b06ff95d9cbfe536a`
+- [上游 Release Notes](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.5-alpha.1)
+
+#### 新增功能
+
+- 支持动态修改系统提示词且不破坏 KV Cache，模型需显式声明支持 @tianyicui
+- 新增实验性右侧 Sidebar，支持多标签、分栏与全屏；聊天文件链接和产出文件支持 Sidebar 打开，并移除原 Detail 面板 @imccyu
+
+#### 体验优化
+
+- 改善 Web 输入框的菜单层级、提示文字和间距；会话统计改为两个可展开的摘要，分别查看轮次与速度、精确 Token 用量与缓存命中。 @Yifffan
+- 内置斜杠命令说明支持中文，并随界面语言即时更新；切换语言时保留已打开菜单和查询内容。 @Kaige-Gao
+- 可选子代理插件的内置运行时升级至 Codex 0.153.4 和 Claude Code 2.1.263；显式模型配置保持不变，未配置模型时 Codex 使用上游默认值。 @koalazf99
+
+#### 问题修复
+
+- 修复会话运行中发送按钮与 Enter 的行为不一致：两者均遵循“繁忙时的发送行为”设置，并明确提示排队或插话发送。 @lsdsjy
+- 修复模型可自行恢复用户已暂停目标的问题；暂停后须由用户恢复，尚未激活的目标也会显示恢复入口。 @mektpoy
+- 修复聊天中本地图片路径无法显示的问题，支持模型回复引用的 POSIX 绝对路径图片，包括工作区外截图；加载失败时显示替代文字或原路径。 @kermanx
+- 拒绝不含正文或附件的空消息及空白队列编辑，保留仅发送图片或文件的能力。 @turtle1999
+- 修复查找项目根目录遇到权限或 I/O 错误时误用上级项目指令的问题，相关错误会直接报告。 @turtle1999
+- 修复折叠的思考摘要直接显示 Markdown 加粗标记的问题，展开内容保持完整。 @turtle1999
+- 修复 macOS 和 Linux 依赖 `fs-ext` 需要本地编译的问题 @imccyu
+
+#### 其他变更
+
+- **会话格式升级至 V3：** 恢复受支持的历史会话时生成新版日志并保留原文件，系统提示词纳入消息历史，旧 PTC 事件与 `code` 预设引用自动迁移。自定义日志读取器需适配新格式；升级后的会话不支持降级读取。 @tianyicui
+- **插件 Agent API 调整：** 移除 `ctx.agent`，调用方需显式传递 Agent；同时修正可继续对话的子代理归属，避免它们被当作根会话参与定时调度。 @kermanx
+- **Inbox API 调整：** `Inbox` 改为类型接口，不再导出可构造的运行时类；插件通过 `agent.inbox` 读写待处理消息，`hasPending` 与 `claim` 不再属于公共接口。 @kermanx
+
+#### New Features
+
+- Support dynamic system prompt updates without invalidating KV Cache when the configured model explicitly declares support. by @tianyicui
+- Add an experimental right Sidebar with tabs, split panes, and fullscreen. Chat file links and produced files can open in the Sidebar, and the Detail panel is removed. by @imccyu
+
+#### Improvements
+
+- Improve Web composer menu layering, placeholder text, and spacing. Present session statistics in two compact summaries for turn counts and speed, and detailed token usage and cache hits. by @Yifffan
+- Localize built-in slash command descriptions into Chinese and update them when the interface language changes, preserving open menus and queries. by @Kaige-Gao
+- Update the optional subagent plugins to Codex 0.153.4 and Claude Code 2.1.263. Explicit model settings remain unchanged; Codex uses its upstream default when no model is configured. by @koalazf99
+
+#### Bug Fixes
+
+- Make the Send button follow the same busy-session setting as Enter, with labels that identify queue or steer delivery. by @lsdsjy
+- Prevent the model from resuming a goal paused by the user. Resuming requires a user action, and inactive goals show a resume control. by @mektpoy
+- Fix local images referenced by absolute POSIX paths in assistant messages, including screenshots outside registered workspaces. Failed loads show the alt text or original path. by @kermanx
+- Reject messages with neither non-whitespace text nor an attachment, and reject blank queue edits. Image-only and file-only messages remain supported. by @turtle1999
+- Report permission and I/O errors during project-root discovery instead of loading instructions from an ancestor project. by @turtle1999
+- Remove literal Markdown bold markers from collapsed thinking summaries while preserving the full expanded content. by @turtle1999
+- Fix the local compilation requirement introduced by `fs-ext` on macOS and Linux. by @imccyu
+
+#### Chores
+
+- **Session format V3:** Upgrade supported historical sessions into new log files while preserving the originals, record system prompts in message history, and migrate legacy PTC events and `code` preset references. Custom log readers must adapt to V3; downgrade reads are not supported. by @tianyicui
+- **Agent plugin API changes:** Remove `ctx.agent` and require callers to pass the Agent explicitly. Correct ownership of continuable subagents so root-only scheduling excludes them. by @kermanx
+- **Inbox API changes:** Make `Inbox` a type-only interface instead of an exported runtime class. Plugins access pending messages through `agent.inbox`; `hasPending` and `claim` are no longer public API. by @kermanx
+
+Full Changelog: https://github.com/deepseek-ai/deepseek-harness/compare/dsh-v0.1.3-alpha.2...dsh-v0.1.5-alpha.1
+
 ## [0.1.23] - 2026-09-08
 
 ### 桌面端
@@ -826,5 +894,7 @@ Full Changelog: https://github.com/deepseek-ai/deepseek-harness/compare/dsh-v0.1
 
 [0.1.22]: https://github.com/314857493/dsh-desktop/compare/v0.1.21...v0.1.22
 
-[Unreleased]: https://github.com/314857493/dsh-desktop/compare/v0.1.23...HEAD
 [0.1.23]: https://github.com/314857493/dsh-desktop/compare/v0.1.22...v0.1.23
+
+[Unreleased]: https://github.com/314857493/dsh-desktop/compare/v0.1.24...HEAD
+[0.1.24]: https://github.com/314857493/dsh-desktop/compare/v0.1.23...v0.1.24
