@@ -8,6 +8,74 @@ DeepSeek Harness 上游版本，以便复现构建和排查兼容性问题。
 
 ## [Unreleased]
 
+## [0.1.25] - 2026-09-10
+
+### 桌面端
+
+- 无桌面壳代码变更；此版本用于同步上游 DeepSeek Harness。
+
+### 内置 DeepSeek Harness
+
+- 版本：`dsh-v0.1.5-alpha.1` → `dsh-v0.1.5-alpha.2`
+- Commit：`b2e3b2a0125854567a4a5fcba75782e42fe84901`
+- [上游 Release Notes](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.5-alpha.2)
+
+#### 新增功能
+
+- 右侧 Sidebar 新增常见文档类型预览，支持 Markdown、代码高亮、HTML、PDF 、图片 @imccyu, @Yifffan, @yixiangihsiang, @CreatixChu, @yudshj
+- 支持模型显式在会话中交付文件，并支持在右侧 Sidebar 预览、用默认应用打开、在文件管理器中定位 @yudshj, @CreatixChu
+- `/feedback` 命令新增支持提交明细反馈内容 @CreatixChu
+
+#### 问题修复
+
+- 修复模型目录变化后失效的 pi-ai 配置导致整个模型设置入口消失的问题；错误项保留诊断和修复入口 @LegGasai
+- 在发现模型或创建自定义 provider 前校验并规范化 Base URL，并直接提示无效地址。 @turtle2099
+- 修复 Windows Web 界面的原生文件夹选择器可能在其他窗口后方打开的问题。 @Elevator14B
+- 修复在 Composer 中输入空白字符后占位提示仍然显示的问题。 @CreatixChu
+- 修复工具筛选后的子代理仍收到不可用文件和 Web 工具指导的问题。 @koalazf99
+- 拒绝 MCP 工具发现中的重复分页游标，避免启动或同步持续等待，并保留上一组可用工具。 @grllll
+- 修复 npm 安装需要依赖 `fs-ext` 本地编译的问题 @imccyu
+
+#### 体验优化
+
+- 改善设置界面的本地化与可访问性：设置入口补充本地化无障碍名称，中文显示对话模式与内置模型说明 @turtle2099
+
+#### 其他变更
+
+- Session 数据格式当前为 V3 版本，跨版本迁移细节见 [session-format-v2-to-v3/README.md](https://github.com/deepseek-ai/deepseek-harness/blob/dsh-v0.1.5-alpha.2/packages/session/session-format-v2-to-v3/README.zh.md) @tianyicui
+- **Web 插件面板 API 调整：** 插件可通过 `sidebar.panellist` 与 `main` 注册全局面板；原 `conversation` Slot 迁移为 `main` 的 `conversation` key @imccyu
+- **极简模式默认工具调整：** Web `minimal` 与 Python `sdk-minimal` 默认仅提供持久 shell，`str_replace_editor` 改为显式启用；持久 Bash 输出统一报告退出或超时状态 @koalazf99
+- 实验性 Agent Teams 包现可从 npm 安装；用户需显式添加 profile，不默认启用 @imccyu
+
+#### New Features
+
+- Add previews for common document types in the right Sidebar, including Markdown, syntax-highlighted code, HTML, PDF, and images. by @imccyu, @Yifffan, @yixiangihsiang, @CreatixChu, @yudshj
+- Let models explicitly deliver files in conversations, with right-Sidebar preview, default-app opening, and file-manager reveal. by @yudshj, @CreatixChu
+- The `/feedback` command now supports detailed feedback submissions. by @CreatixChu
+
+#### Bug Fixes
+
+- Keep pi-ai model settings available when catalog changes invalidate an existing configuration, preserving diagnostics and repair controls. by @LegGasai
+- Validate and normalize custom-provider Base URLs before model discovery or provider creation, with inline feedback for invalid addresses. by @turtle2099
+- Fix the Windows native folder picker opening behind other windows in the Web app. by @Elevator14B
+- Fix the Composer placeholder remaining visible after whitespace is entered. by @CreatixChu
+- Keep filesystem and Web guidance aligned with each agent's visible tools, so filtered subagents are not instructed to use unavailable tools. by @koalazf99
+- Reject repeated MCP tool-list pagination cursors instead of hanging startup or synchronization, while keeping the last valid tool set available. by @grllll
+- Fix npm installations that previously required a local `fs-ext` build. by @imccyu
+
+#### Improvements
+
+- Improve Settings localization and accessibility by adding accessible names and localizing conversation display options and built-in model descriptions in Chinese. by @turtle2099
+
+#### Chores
+
+- The current Session data format is V3. See [session-format-v2-to-v3/README.md](https://github.com/deepseek-ai/deepseek-harness/blob/dsh-v0.1.5-alpha.2/packages/session/session-format-v2-to-v3/README.md) for cross-version migration details. by @tianyicui
+- **Web plugin panel API changes:** Plugins can register global panels through `sidebar.panellist` and `main`; the former `conversation` slot moves to the `conversation` key under `main`. by @imccyu
+- **Minimal-profile default tools:** Web `minimal` and Python `sdk-minimal` are shell-only by default, with `str_replace_editor` available by explicit opt-in; persistent Bash reports completion and timeout status consistently. by @koalazf99
+- Publish installable experimental Agent Teams packages; users must explicitly add the profile, which is not enabled by default. by @imccyu
+
+Full Changelog: https://github.com/deepseek-ai/deepseek-harness/compare/dsh-v0.1.5-alpha.1...dsh-v0.1.5-alpha.2
+
 ## [0.1.24] - 2026-09-09
 
 ### 桌面端
@@ -896,5 +964,7 @@ Full Changelog: https://github.com/deepseek-ai/deepseek-harness/compare/dsh-v0.1
 
 [0.1.23]: https://github.com/314857493/dsh-desktop/compare/v0.1.22...v0.1.23
 
-[Unreleased]: https://github.com/314857493/dsh-desktop/compare/v0.1.24...HEAD
 [0.1.24]: https://github.com/314857493/dsh-desktop/compare/v0.1.23...v0.1.24
+
+[Unreleased]: https://github.com/314857493/dsh-desktop/compare/v0.1.25...HEAD
+[0.1.25]: https://github.com/314857493/dsh-desktop/compare/v0.1.24...v0.1.25
