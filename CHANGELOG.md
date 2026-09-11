@@ -8,6 +8,85 @@ DeepSeek Harness 上游版本，以便复现构建和排查兼容性问题。
 
 ## [Unreleased]
 
+## [0.1.26] - 2026-09-11
+
+### 桌面端
+
+- 无桌面壳代码变更；此版本用于同步上游 DeepSeek Harness。
+
+### 内置 DeepSeek Harness
+
+- 版本：`dsh-v0.1.5-alpha.2` → `dsh-v0.1.5-rc.1`
+- Commit：`183f08e9c6dde7e36cd2318eaee70b0da08fb35e`
+- [上游 Release Notes](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.5-rc.1)
+
+作为 `0.1.5` 系列的首个候选版本，本版本汇总了自 `v0.1.2-rc.1` 以来的主要用户和开发者相关变更。
+
+#### 新增功能
+
+- DeepSeek 模型适配器新增 `DeepSeek-V41-Flash`（`deepseek-flash`）支持文本、图片及会话历史中的系统提示词更新。新会话默认使用该模型，配置文件显式指定模型时以配置值为准。 @LegGasai
+- Web 支持上传任意类型的通用文件：文件与图片可在同一预览区混排，后台上传支持进度、取消与会话切换续显，模型可通过已保存路径使用现有文件工具按需读取。 @CreatixChu
+- 可继续对话的子代理支持消息排队、编辑、删除、单条或全部 Steer 与停止操作；排队消息发送期间显示“发送中”，并暂不可编辑、删除或 Steer。 @Dudu-0223, @LegGasai
+- 支持动态修改系统提示词且不破坏 KV Cache，模型需显式声明支持。 @tianyicui
+- Web 右侧 Sidebar 支持多标签、分栏、全屏以及 Markdown、代码、HTML、PDF 和图片预览，包括子代理和未激活会话的文件；模型可显式交付文件，并可在 Sidebar 中预览、用默认应用打开或在文件管理器中定位。原 Detail 面板已移除。 @imccyu, @Yifffan, @yixiangihsiang, @CreatixChu, @yudshj
+- 模型探测新增对自定义模型提供商 `models` 对象和 Anthropic 原生模型列表的支持，并支持回填模型名称、上下文窗口及最大输出 token 的回填。 @LegGasai
+- 所有出站网络请求都会遵循启动环境中的 `HTTP_PROXY`、`HTTPS_PROXY`、`ALL_PROXY` 与 `NO_PROXY` 配置。 @LegGasai
+- Web 顶栏新增“在应用中打开”，可用已安装的编辑器、IDE、终端或文件管理器等打开 Workspace。 @yixiangihsiang
+- 反馈可独立提交，无需继续对话；`/feedback` 命令支持提交明细反馈内容，提交时附带相关会话内容。 @tianyicui, @Chinesezjc, @CreatixChu
+
+#### 体验优化
+
+- Web 可直接显示顶层及 PTC 嵌套 `read_image` 的图片结果，以及模型回复中引用的 POSIX 绝对路径本地图片，包括工作区外截图；加载失败时显示替代文字或原路径。 @Chinesezjc, @kermanx
+- Skill 选择器支持模糊搜索；优化聊天气泡中的的 Skill 和命令引用。 @LegGasai
+- 调整会话内可点击链接的颜色、hover/focus 样式和分类图标，优化 Markdown 链接、文件引用、网页来源、产物链接与 Workflow 成员链接的辨识度。 @yixiangihsiang
+- Windows 上的本地非终端子进程不再弹出控制台窗口。 @turtle1999
+- Agent Team 的 `send_message` 统一采用 steer 语义，并在跨 Agent 和冷恢复投递中保留发送者归属与顺序。 @Dudu-0223
+- 改善长会话打开、恢复和持续对话时的卡顿，降低内存占用。 @imccyu, @tianyicui, @Dudu-0223
+- 引用较长会话时，模型可按需读取预览中未展示的内容。 @tianyicui
+- 改善设置面板的标签、开关状态样式，改善浅色和深色主题下的显示效果，改善本地化与可访问性 @LegGasai, @turtle2099
+- PTC 模式下支持展开查看命令及其输出。 @tianyicui
+- 改善 Web 输入框的菜单层级、提示文字和间距；会话统计改为两个可展开的摘要，分别查看轮次与速度、精确 Token 用量与缓存命中。 @Yifffan
+- 内置斜杠命令说明支持中文，并随界面语言即时更新；切换语言时保留已打开菜单和查询内容。 @Kaige-Gao
+
+#### 问题修复
+
+- 用户在 Web 中暂停目标会立即终止当前模型轮次，且模型不能自行恢复；恢复必须由用户触发，尚未激活的目标也显示恢复入口。 @mektpoy
+- 修复 DeepSeek 流式工具调用的续传分片用空值覆盖调用 ID 或名称的问题，避免工具以空名称失败并写入无法重新打开的会话记录。 @LegGasai
+- 修复 Python SDK 单文件 runtime 将 Bash 中以 `node` 开头的命令错误重写为 dsh runtime 的问题。 @imccyu
+- 修复从会话搜索结果进入会话后仍停留在搜索界面的问题；目标会话会在所属 Workspace 中展开并滚动到可见位置。 @Dudu-0223
+- 修复 Windows 盘符根目录 Workspace 的路径分隔符、标题与绝对路径校验，确保盘符根目录可以正常使用。 @turtle1999
+- 修复 Web 断线后无法自动恢复的问题。 @LegGasai
+- 修复发送消息或调整窗口后，聊天不再自动滚动到底部的问题。 @tianyicui
+- 修复 Windows 上 Python SDK 运行时可能出现的启动崩溃。 @tianyicui
+- 修复会话运行中发送按钮与 Enter 的行为不一致：两者均遵循“繁忙时的发送行为”设置，并明确提示排队或插话发送。 @lsdsjy
+- 拒绝不含正文或附件的空消息及空白队列编辑，保留仅发送图片或文件的能力。 @turtle1999
+- 修复查找项目根目录遇到权限或 I/O 错误时误用上级项目指令的问题，相关错误会直接报告。 @turtle1999
+- 修复折叠的思考摘要直接显示 Markdown 加粗标记的问题，展开内容保持完整。 @turtle1999
+- 修复模型目录变化后失效的 pi-ai 配置导致整个模型设置入口消失的问题；错误项保留诊断和修复入口 @LegGasai
+- 在发现模型或创建自定义 provider 前校验并规范化 Base URL，并直接提示无效地址。 @turtle2099
+- 修复 Windows Web 界面的原生文件夹选择器可能在其他窗口后方打开的问题。 @Elevator14B
+- 修复在 Composer 中输入空白字符后占位提示仍然显示的问题。 @CreatixChu
+- 修复工具筛选后的子代理仍收到不可用文件和 Web 工具指导的问题。 @koalazf99
+- 拒绝 MCP 工具发现中的重复分页游标，避免启动或同步持续等待，并保留上一组可用工具。 @grllll
+
+#### 其他变更
+
+- **会话数据格式升级至 V3：** 受支持的旧日志通过版本迁移生成新版日志并保留原文件，升级后的会话不支持降级读取。自定义日志读取器需适配 V3，跨版本迁移细节见 [session-format-v2-to-v3/README.md](https://github.com/deepseek-ai/deepseek-harness/blob/dsh-v0.1.5-rc.1/packages/session/session-format-v2-to-v3/README.zh.md)。 @tianyicui, @Magolor, @imccyu
+- **Session 生命周期变更：** Session persistence API 改为由生命周期持有的 `SessionHandle`；`agentLoop.create()` 改为异步，新增session锁，同一session至多被一个进程持有。 @turtle1999, @imccyu
+- **默认工具调整：** SDK、Headless 和 ACP 默认使用 read、write、edit 编辑文件；Web `minimal` 与 Python `sdk-minimal` 默认仅提供持久 shell，`str_replace_editor` 需显式启用，持久 Bash 输出统一报告退出或超时状态。 @koalazf99
+- 改善 Windows 和部分 Linux 环境下普通子进程的清理，减少任务停止后的后台进程残留；普通 subprocess handle 不再暴露 pid，终端 handle 不受影响。 @pku-xht
+- 统一未观察文件写入与编辑失败的 `FS_NOT_OBSERVED` 诊断，保留文件路径、结构化错误码和原始原因。 @turtle1999
+- Python SDK 新增 macOS x64 runtime wheel，可在 Intel 架构的 Mac 上安装并运行随包 runtime。 @koalazf99
+- 升级 pi-ai 版本至 0.85.1 @tianyicui
+- 可选子代理插件的内置运行时升级至 Codex 0.153.4 和 Claude Code 2.1.263；显式模型配置保持不变，未配置模型时 Codex 使用上游默认值。 @koalazf99
+- 自定义 persona 配置拆分为前缀和后缀，旧配置及相关常量需要适配。 @tianyicui
+- **插件 Agent API 调整：** 移除 `ctx.agent`，调用方需显式传递 Agent；同时修正可继续对话的子代理归属，避免它们被当作根会话参与定时调度。 @kermanx
+- **Inbox API 调整：** `Inbox` 改为类型接口，不再导出可构造的运行时类；插件通过 `agent.inbox` 读写待处理消息，`hasPending` 与 `claim` 不再属于公共接口。 @kermanx
+- **Web 插件面板 API 调整：** 插件可通过 `sidebar.panellist` 与 `main` 注册全局面板；原 `conversation` Slot 迁移为 `main` 的 `conversation` key @imccyu
+- 实验性 Agent Teams 包现可从 npm 安装；用户需显式添加 profile，不默认启用 @imccyu
+
+Full Changelog: https://github.com/deepseek-ai/deepseek-harness/compare/dsh-v0.1.2-rc.1...dsh-v0.1.5-rc.1
+
 ## [0.1.25] - 2026-09-10
 
 ### 桌面端
@@ -966,5 +1045,7 @@ Full Changelog: https://github.com/deepseek-ai/deepseek-harness/compare/dsh-v0.1
 
 [0.1.24]: https://github.com/314857493/dsh-desktop/compare/v0.1.23...v0.1.24
 
-[Unreleased]: https://github.com/314857493/dsh-desktop/compare/v0.1.25...HEAD
 [0.1.25]: https://github.com/314857493/dsh-desktop/compare/v0.1.24...v0.1.25
+
+[Unreleased]: https://github.com/314857493/dsh-desktop/compare/v0.1.26...HEAD
+[0.1.26]: https://github.com/314857493/dsh-desktop/compare/v0.1.25...v0.1.26
