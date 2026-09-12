@@ -8,6 +8,23 @@ DeepSeek Harness 上游版本，以便复现构建和排查兼容性问题。
 
 ## [Unreleased]
 
+## [0.1.27] - 2026-09-12
+
+### 桌面端
+
+- 无桌面壳代码变更；此版本用于同步上游 DeepSeek Harness。
+
+### 内置 DeepSeek Harness
+
+- 版本：`dsh-v0.1.5-rc.1` → `dsh-v0.1.5-rc.2`
+- Commit：`fb2c4b9e698e30edb738bca4cf0618587db7d203`
+- [上游 Release Notes](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.5-rc.2)
+
+#### 体验优化
+
+- 优化反馈提交体验：点赞和点踩均通过弹窗确认后提交，提交失败时保留已填写内容并给出提示。@yixiangihsiang
+- 优化交付文件卡片的排版和对话间距，更新代码文件图标，让文件更易辨认、界面更紧凑。@yixiangihsiang
+
 ## [0.1.26] - 2026-09-11
 
 ### 桌面端
@@ -1047,5 +1064,7 @@ Full Changelog: https://github.com/deepseek-ai/deepseek-harness/compare/dsh-v0.1
 
 [0.1.25]: https://github.com/314857493/dsh-desktop/compare/v0.1.24...v0.1.25
 
-[Unreleased]: https://github.com/314857493/dsh-desktop/compare/v0.1.26...HEAD
 [0.1.26]: https://github.com/314857493/dsh-desktop/compare/v0.1.25...v0.1.26
+
+[Unreleased]: https://github.com/314857493/dsh-desktop/compare/v0.1.27...HEAD
+[0.1.27]: https://github.com/314857493/dsh-desktop/compare/v0.1.26...v0.1.27
