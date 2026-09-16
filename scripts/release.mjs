@@ -257,7 +257,13 @@ if (!PACKAGE_ONLY) {
     console.log('cleaning old rt...')
     rmSync(rtDir, { recursive: true, force: true })
   }
-  run('pnpm deploy', 'pnpm', ['--filter', '@deepseek-ai/dsh', 'deploy', '--legacy', '--config.node-linker=hoisted', rtDir], { cwd: REPO })
+  // The filtered runtime excludes upstream desktop/build packages, but legacy
+  // deploy inherits their patches (for example @electron/osx-sign). Allow
+  // unused patches only here; install and patch application remain strict.
+  run('pnpm deploy', 'pnpm', [
+    '--filter', '@deepseek-ai/dsh', 'deploy', '--legacy',
+    '--config.node-linker=hoisted', '--config.allowUnusedPatches=true', rtDir,
+  ], { cwd: REPO })
 
   // ---------- 2. patch runtime deps ----------
   step('4/13 patch-runtime (restore runtime-needed devDeps)')

@@ -84,8 +84,7 @@ fn assign_kill_on_close_job(child: &Child) {
             CloseHandle(job);
             return;
         }
-        let assigned =
-            AssignProcessToJobObject(job, child.as_raw_handle() as *mut core::ffi::c_void);
+        let assigned = AssignProcessToJobObject(job, child.as_raw_handle());
         if assigned == 0 {
             CloseHandle(job);
             return; // e.g. the child is already in a job that blocks nesting
