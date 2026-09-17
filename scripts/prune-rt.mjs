@@ -109,6 +109,11 @@ for (const base of [join(root, 'lib'), join(root, 'scripts')]) {
 }
 
 // ---- keep set: referenced orphans + their transitive deps -----------------
+// Add essential runtime packages that might be dynamically resolved or loaded
+// by runtime plugins/config but not caught by static import regex.
+referenced.add('@deepseek-ai/webserver')
+referenced.add('@deepseek-ai/dsh-web-app')
+
 const keep = new Set(referenced)
 const pending = [...referenced]
 while (pending.length) {
