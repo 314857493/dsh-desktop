@@ -114,6 +114,15 @@ for (const base of [join(root, 'lib'), join(root, 'scripts')]) {
 referenced.add('@deepseek-ai/dsh-host-webserver')
 referenced.add('@deepseek-ai/webserver')
 referenced.add('@deepseek-ai/dsh-web-app')
+referenced.add('@deepseek-ai/dsh-client-connection')
+referenced.add('@deepseek-ai/dsh-client-modules')
+referenced.add('@deepseek-ai/dsh-client-hmr')
+referenced.add('@deepseek-ai/dsh-host-frontend-static')
+referenced.add('@deepseek-ai/dsh-host-directory-picker-auto')
+referenced.add('@deepseek-ai/dsh-host-open-in-app')
+referenced.add('@deepseek-ai/dsh-session-log-export')
+referenced.add('@deepseek-ai/dsh-client-file-upload')
+referenced.add('@deepseek-ai/dsh-client-ui-deliverables')
 
 const keep = new Set(referenced)
 const pending = [...referenced]
