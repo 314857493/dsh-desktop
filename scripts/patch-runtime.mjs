@@ -178,3 +178,38 @@ for (;;) {
   for (const [spec, file] of missing) console.log(`  ${spec}   (from ${file.replace(ROOT, '<deploy>')})`)
   for (const spec of missing.keys()) copyPackage(spec)
 }
+
+// ---------------------------------------------------------------------------
+// Sync root manifest dependencies
+// ---------------------------------------------------------------------------
+// Runtimes like dsh-app-boot read rt/package.json to compute the installation
+// module fallback closure. Ensure critical runtime packages are declared in
+// dependencies so they are included in the fallback generation.
+const rtPkgPath = join(ROOT, 'package.json')
+if (existsSync(rtPkgPath)) {
+  try {
+    const rtPkg = JSON.parse(readFileSync(rtPkgPath, 'utf8'))
+    rtPkg.dependencies ??= {}
+    let updated = false
+    const essentialDeps = [
+      '@deepseek-ai/dsh-host-webserver',
+      '@deepseek-ai/dsh-web-app',
+      '@deepseek-ai/dsh-client-connection',
+      '@deepseek-ai/dsh-client-modules',
+      '@deepseek-ai/dsh-client-hmr',
+    ]
+    for (const dep of essentialDeps) {
+      if (!rtPkg.dependencies[dep]) {
+        rtPkg.dependencies[dep] = 'workspace:^'
+        updated = true
+      }
+    }
+    if (updated) {
+      writeFileSync(rtPkgPath, JSON.stringify(rtPkg, null, 2) + '\n')
+      console.log('patch-runtime: declared essential dependencies in rt/package.json')
+    }
+  } catch (error) {
+    console.error('patch-runtime: failed to update rt/package.json:', error)
+  }
+}
+
