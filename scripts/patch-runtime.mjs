@@ -7,7 +7,7 @@
 // deploy's hoisted `.pnpm/node_modules`, and repeats until a fixpoint.
 //
 // Usage: node patch-runtime.mjs <deployRoot> <repoRoot>
-import { readFileSync, readdirSync, statSync, cpSync, existsSync, mkdirSync, realpathSync } from 'node:fs'
+import { readFileSync, writeFileSync, readdirSync, statSync, cpSync, existsSync, mkdirSync, realpathSync } from 'node:fs'
 import { join, dirname, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { builtinModules } from 'node:module'
