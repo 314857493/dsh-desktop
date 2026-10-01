@@ -183,6 +183,15 @@ function isOwnedSeedPackage(profileDir, installedPackage) {
   }
 }
 
+function isNonemptyFile(path) {
+  try {
+    const artifact = statSync(path)
+    return artifact.isFile() && artifact.size > 0
+  } catch {
+    return false
+  }
+}
+
 function isUsableBundlePackage(packageDir, manifest) {
   const patch = manifest?.dsh?.bundle?.patch
   return manifest?.name === MARKETPLACE_PACKAGE &&
@@ -190,26 +199,20 @@ function isUsableBundlePackage(packageDir, manifest) {
     manifest.version !== '' &&
     typeof patch === 'string' &&
     patch !== '' &&
-    existsSync(join(packageDir, patch))
+    isNonemptyFile(join(packageDir, patch))
 }
 
 function hasUsableMarketplaceClient(packageDir, manifest) {
   // A working host patch does not imply a working marketplace UI. Check the
   // client artifact the DSH module registry actually loads; otherwise an
   // interrupted package update can leave the HTTP routes alive while the
-  // settings entry never arrives. Older host-only bundle declarations keep
-  // their existing migration behavior.
-  if (manifest.dsh.client === undefined) return true
+  // settings entry never arrives. The marketplace is a Web UI bundle: a
+  // surviving client.js cannot register anything without its declaration.
   if (manifest.dsh.client?.platform !== 'web') return false
   const clientExport = manifest.exports?.['./client']
   const clientPath = typeof clientExport === 'string' ? clientExport : clientExport?.default
   if (typeof clientPath !== 'string' || clientPath === '') return false
-  try {
-    const artifact = statSync(join(packageDir, clientPath))
-    return artifact.isFile() && artifact.size > 0
-  } catch {
-    return false
-  }
+  return isNonemptyFile(join(packageDir, clientPath))
 }
 
 function copySeedPackage(seedPackageDir, profileDir, seedVersion) {
@@ -477,11 +480,20 @@ export async function ensureMarketplace(runtimeDir, dshHome = runtimeHome()) {
     pinInstalledSeed(nextStatus)
   }
 
-  if (suspension !== undefined && hasDependency && !hasBundle) {
-    if (installedSeedNeedsPin) {
-      pinInstalledSeed('repaired')
-    } else if (installedAllowsNewerSeed) {
+  // Legacy profiles may still declare the marketplace dependency without a
+  // bundle registration. Only a handled profile with no suspension can mean
+  // that the user removed its bundle; a pre-migration dependency needs the
+  // same reconciliation as an active or temporarily suspended marketplace.
+  const needsRegistration = !hasBundle && hasDependency &&
+    (suspension !== undefined || markerSchema < MARKETPLACE_SCHEMA_VERSION)
+  const shouldUpgrade = installedIsStaleSeed || installedAllowsNewerSeed ||
+    installedIsOlderAndIncompatible
+
+  if (needsRegistration) {
+    if (shouldUpgrade) {
       installSeed('updated')
+    } else if (installedSeedNeedsPin) {
+      pinInstalledSeed('repaired')
     } else if (installedPackageUsable) {
       bundles.push(MARKETPLACE_PACKAGE)
       profileChanged = true
@@ -491,6 +503,10 @@ export async function ensureMarketplace(runtimeDir, dshHome = runtimeHome()) {
     } else if (seedMatchesDependency) {
       installSeed('repaired')
     } else {
+      suspension = {
+        reason: 'missing-package',
+        dependencySpec: String(dependencySpec),
+      }
       status = 'suspended'
     }
   } else if (!hasBundle && !hasDependency && markerSchema === 0) {
@@ -507,11 +523,7 @@ export async function ensureMarketplace(runtimeDir, dshHome = runtimeHome()) {
     } else {
       installSeed(markerSchema === 1 ? 'migrated' : 'repaired')
     }
-  } else if (hasBundle && hasDependency && installedIsStaleSeed) {
-    installSeed('updated')
-  } else if (hasBundle && hasDependency && installedAllowsNewerSeed) {
-    installSeed('updated')
-  } else if (hasBundle && hasDependency && installedIsOlderAndIncompatible) {
+  } else if (hasBundle && hasDependency && shouldUpgrade) {
     installSeed('updated')
   } else if (hasBundle && hasDependency && installedSeedNeedsPin) {
     pinInstalledSeed('repaired')
