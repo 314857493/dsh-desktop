@@ -264,7 +264,7 @@ test('a previously copied current seed with an old range is pinned without recop
   assert.equal(readFileSync(join(installed, 'previous-migration.txt'), 'utf8'), 'preserve me\n')
 })
 
-test('an exact older registry version is preserved as an explicit user selection', async (t) => {
+test('an exact older registry version is preserved if compatible, or upgraded if incompatible', async (t) => {
   const fixture = createFixture(t)
   initializeProfile(fixture.profileDir, {
     dependencies: { dshmarket: '1.0.0' },
@@ -279,6 +279,41 @@ test('an exact older registry version is preserved as an explicit user selection
   assert.equal(result.version, '1.0.0')
   assert.equal(profileManifest(fixture.profileDir).dependencies.dshmarket, '1.0.0')
   assert.equal(readFileSync(join(installed, 'user-version.txt'), 'utf8'), 'keep exact version\n')
+})
+
+test('an older incompatible marketplace version is upgraded to the compatible bundled seed', async (t) => {
+  const fixture = createFixture(t)
+  initializeProfile(fixture.profileDir, {
+    dependencies: { dshmarket: '1.41.0' },
+    marketplaceBundle: true,
+  })
+  // Write an installed package that declares peerDependencies incompatible with current dsh runtime
+  const installed = writeInstalledMarketplace(fixture.profileDir, '1.41.0')
+  writeJson(join(installed, 'package.json'), {
+    name: 'dshmarket',
+    version: '1.41.0',
+    dsh: { bundle: { patch: 'cordis.patch.yml' } },
+    peerDependencies: {
+      '@deepseek-ai/dsh-settings': '^0.1.0-rc.7 || ^0.1.1-rc.2 || ^0.1.2-alpha.2',
+    },
+  })
+  // Mock evaluatePluginCompatibility on app-boot mock
+  const appBoot = join(fixture.runtime, 'node_modules', '@deepseek-ai', 'dsh-app-boot', 'lib', 'index.js')
+  const original = readFileSync(appBoot, 'utf8')
+  writeFileSync(
+    appBoot,
+    `${original}\nexport function evaluatePluginCompatibility(manifest) {
+      if (manifest.version === '1.41.0') return { name: 'dshmarket', version: '1.41.0', exempted: false };
+      return undefined;
+    }\n`,
+  )
+
+  const result = await ensureMarketplace(fixture.runtime, fixture.home)
+
+  assert.equal(result.status, 'updated')
+  assert.equal(result.version, SEED_VERSION)
+  assert.equal(profileManifest(fixture.profileDir).dependencies.dshmarket, SEED_VERSION)
+  assert.ok(existsSync(join(installed, 'seed.txt')))
 })
 
 test('an older desktop-owned seed is refreshed after the bundled runtime updates', async (t) => {

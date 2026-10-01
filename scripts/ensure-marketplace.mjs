@@ -324,8 +324,10 @@ export async function ensureMarketplace(runtimeDir, dshHome = runtimeHome()) {
   ).href
   const {
     PROFILE_TEMPLATES,
+    evaluatePluginCompatibility,
     initProfile,
     loadOverlayPatches,
+    readProfileCompatibility,
     readProfileManifest,
     resolveProfileDir,
     writeProfileManifest,
@@ -377,6 +379,25 @@ export async function ensureMarketplace(runtimeDir, dshHome = runtimeHome()) {
   }
   const seedMatchesDependency = seedMatchesSpec(seed, dependencySpec)
   const installedIsOwnedSeed = isOwnedSeedPackage(profileDir, installedPackage)
+  const isPackageCompatible = (manifest) => {
+    if (!manifest) return false
+    if (typeof evaluatePluginCompatibility !== 'function') return true
+    try {
+      const { exemptions } = typeof readProfileCompatibility === 'function'
+        ? readProfileCompatibility(profileDir)
+        : { exemptions: {} }
+      const issue = evaluatePluginCompatibility(manifest, exemptions)
+      return issue === undefined || issue.exempted === true
+    } catch {
+      return true
+    }
+  }
+  // If an older installed marketplace package is incompatible with the active
+  // DSH runtime, but the shipped seed is compatible, upgrade it rather than
+  // leaving an unbootable/skipped bundle in the profile.
+  const installedIsOlderAndIncompatible = installedPackage !== undefined &&
+    !isPackageCompatible(installedPackage) &&
+    isPackageCompatible(marketManifest)
   // installSeed writes an exact dependency. If both that exact spec and the
   // ownership record still point at an older bundled copy, no user-managed
   // selection has replaced it: refresh it with the seed shipped alongside
@@ -464,6 +485,8 @@ export async function ensureMarketplace(runtimeDir, dshHome = runtimeHome()) {
   } else if (hasBundle && hasDependency && installedIsStaleSeed) {
     installSeed('updated')
   } else if (hasBundle && hasDependency && installedAllowsNewerSeed) {
+    installSeed('updated')
+  } else if (hasBundle && hasDependency && installedIsOlderAndIncompatible) {
     installSeed('updated')
   } else if (hasBundle && hasDependency && installedSeedNeedsPin) {
     pinInstalledSeed('repaired')
