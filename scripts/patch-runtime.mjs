@@ -197,6 +197,12 @@ if (existsSync(rtPkgPath)) {
       '@deepseek-ai/dsh-client-connection',
       '@deepseek-ai/dsh-client-modules',
       '@deepseek-ai/dsh-client-hmr',
+      '@deepseek-ai/dsh-host-frontend-static',
+      '@deepseek-ai/dsh-host-open-in-app',
+      '@deepseek-ai/dsh-host-directory-picker-auto',
+      '@deepseek-ai/dsh-session-log-export',
+      '@deepseek-ai/dsh-client-file-upload',
+      '@deepseek-ai/dsh-client-ui-deliverables',
     ]
     for (const dep of essentialDeps) {
       if (!rtPkg.dependencies[dep]) {
