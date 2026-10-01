@@ -560,3 +560,119 @@ test('an invalid marker preserves a previously removed marketplace', async (t) =
   assert.equal(profileManifest(fixture.profileDir).dependencies.dshmarket, undefined)
   assert.ok(!profileManifest(fixture.profileDir).dsh.profile.bundles.includes('dshmarket'))
 })
+
+function addMarketplaceClient(packageDir, clientExport = './client/client.js') {
+  const manifestPath = join(packageDir, 'package.json')
+  const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
+  manifest.dsh.client = { platform: 'web', inject: [] }
+  manifest.exports = { './client': clientExport }
+  writeJson(manifestPath, manifest)
+  mkdirSync(join(packageDir, 'client'), { recursive: true })
+  writeFileSync(join(packageDir, 'client', 'client.js'), 'window.__ModuleLoader__.load({ id: "dshmarket", factory: () => ({}) });\n')
+}
+
+test('an incomplete seeded frontend is repaired before the server boots', async (t) => {
+  for (const damage of ['missing', 'empty', 'directory']) {
+    await t.test(damage, async (t) => {
+      const fixture = createFixture(t)
+      const seedPackage = join(fixture.runtime, 'marketplace-seed', 'node_modules', 'dshmarket')
+      addMarketplaceClient(seedPackage)
+      initializeProfile(fixture.profileDir, {
+        dependencies: { dshmarket: SEED_VERSION },
+        marketplaceBundle: true,
+      })
+      const installed = writeInstalledMarketplace(fixture.profileDir, SEED_VERSION)
+      addMarketplaceClient(installed)
+      const client = join(installed, 'client', 'client.js')
+      if (damage === 'empty') writeFileSync(client, '')
+      else {
+        rmSync(client)
+        if (damage === 'directory') mkdirSync(client)
+      }
+
+      const result = await ensureMarketplace(fixture.runtime, fixture.home)
+
+      assert.equal(result.status, 'repaired')
+      assert.equal(readFileSync(client, 'utf8'), readFileSync(join(seedPackage, 'client', 'client.js'), 'utf8'))
+      assert.equal(profileManifest(fixture.profileDir).dependencies.dshmarket, SEED_VERSION)
+      assert.equal((await ensureMarketplace(fixture.runtime, fixture.home)).status, 'alreadyInstalled')
+    })
+  }
+})
+
+test('a broken user-selected frontend is suspended without replacing its version', async (t) => {
+  const fixture = createFixture(t)
+  initializeProfile(fixture.profileDir, {
+    dependencies: { dshmarket: '9.9.9-beta.1' },
+    marketplaceBundle: true,
+  })
+  const installed = writeInstalledMarketplace(fixture.profileDir, '9.9.9-beta.1')
+  addMarketplaceClient(installed)
+  rmSync(join(installed, 'client', 'client.js'))
+  writeFileSync(join(installed, 'user-version.txt'), 'keep selected version\n')
+
+  const result = await ensureMarketplace(fixture.runtime, fixture.home)
+
+  assert.equal(result.status, 'suspended')
+  assert.equal(profileManifest(fixture.profileDir).dependencies.dshmarket, '9.9.9-beta.1')
+  assert.equal(readFileSync(join(installed, 'user-version.txt'), 'utf8'), 'keep selected version\n')
+  assert.ok(!existsSync(join(installed, 'seed.txt')))
+})
+
+test('a seed with a missing frontend is rejected before touching the profile', async (t) => {
+  const fixture = createFixture(t)
+  const seedPackage = join(fixture.runtime, 'marketplace-seed', 'node_modules', 'dshmarket')
+  addMarketplaceClient(seedPackage)
+  rmSync(join(seedPackage, 'client', 'client.js'))
+
+  await assert.rejects(ensureMarketplace(fixture.runtime, fixture.home), /seed manifest is inconsistent/)
+  assert.ok(!existsSync(join(fixture.profileDir, 'package.json')))
+})
+
+test('conditional client exports are accepted when their default artifact is complete', async (t) => {
+  const fixture = createFixture(t)
+  const seedPackage = join(fixture.runtime, 'marketplace-seed', 'node_modules', 'dshmarket')
+  addMarketplaceClient(seedPackage, { default: './client/client.js' })
+
+  assert.equal((await ensureMarketplace(fixture.runtime, fixture.home)).status, 'installed')
+  assert.equal((await ensureMarketplace(fixture.runtime, fixture.home)).status, 'alreadyInstalled')
+})
+
+test('a suspended seeded marketplace with a broken frontend is repaired and re-enabled', async (t) => {
+  const fixture = createFixture(t)
+  initializeProfile(fixture.profileDir, { dependencies: { dshmarket: SEED_VERSION } })
+  writeJson(join(fixture.profileDir, MARKETPLACE_MARKER), {
+    schemaVersion: MARKETPLACE_SCHEMA_VERSION,
+    package: 'dshmarket',
+    seededVersion: SEED_VERSION,
+    suspended: { reason: 'missing-package', dependencySpec: SEED_VERSION },
+  })
+  const seedPackage = join(fixture.runtime, 'marketplace-seed', 'node_modules', 'dshmarket')
+  addMarketplaceClient(seedPackage)
+  const installed = writeInstalledMarketplace(fixture.profileDir, SEED_VERSION)
+  addMarketplaceClient(installed)
+  rmSync(join(installed, 'client', 'client.js'))
+
+  const result = await ensureMarketplace(fixture.runtime, fixture.home)
+
+  assert.equal(result.status, 'repaired')
+  assert.ok(profileManifest(fixture.profileDir).dsh.profile.bundles.includes('dshmarket'))
+  assert.ok(existsSync(join(installed, 'client', 'client.js')))
+  assert.equal(JSON.parse(readFileSync(join(fixture.profileDir, MARKETPLACE_MARKER))).suspended, undefined)
+})
+
+test('pinning a current desktop seed also repairs its broken frontend', async (t) => {
+  const fixture = createFixture(t)
+  const seedPackage = join(fixture.runtime, 'marketplace-seed', 'node_modules', 'dshmarket')
+  addMarketplaceClient(seedPackage)
+  await ensureMarketplace(fixture.runtime, fixture.home)
+  const profile = profileManifest(fixture.profileDir)
+  profile.dependencies.dshmarket = `^${SEED_VERSION}`
+  writeJson(join(fixture.profileDir, 'package.json'), profile)
+  const client = join(fixture.profileDir, 'node_modules', 'dshmarket', 'client', 'client.js')
+  rmSync(client)
+
+  assert.equal((await ensureMarketplace(fixture.runtime, fixture.home)).status, 'repaired')
+  assert.ok(existsSync(client))
+  assert.equal(profileManifest(fixture.profileDir).dependencies.dshmarket, SEED_VERSION)
+})

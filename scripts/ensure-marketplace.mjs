@@ -16,6 +16,7 @@ import {
   readFileSync,
   renameSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from 'node:fs'
 import { homedir } from 'node:os'
@@ -192,6 +193,25 @@ function isUsableBundlePackage(packageDir, manifest) {
     existsSync(join(packageDir, patch))
 }
 
+function hasUsableMarketplaceClient(packageDir, manifest) {
+  // A working host patch does not imply a working marketplace UI. Check the
+  // client artifact the DSH module registry actually loads; otherwise an
+  // interrupted package update can leave the HTTP routes alive while the
+  // settings entry never arrives. Older host-only bundle declarations keep
+  // their existing migration behavior.
+  if (manifest.dsh.client === undefined) return true
+  if (manifest.dsh.client?.platform !== 'web') return false
+  const clientExport = manifest.exports?.['./client']
+  const clientPath = typeof clientExport === 'string' ? clientExport : clientExport?.default
+  if (typeof clientPath !== 'string' || clientPath === '') return false
+  try {
+    const artifact = statSync(join(packageDir, clientPath))
+    return artifact.isFile() && artifact.size > 0
+  } catch {
+    return false
+  }
+}
+
 function copySeedPackage(seedPackageDir, profileDir, seedVersion) {
   const profileModules = join(profileDir, 'node_modules')
   const target = join(profileModules, MARKETPLACE_PACKAGE)
@@ -312,6 +332,7 @@ export async function ensureMarketplace(runtimeDir, dshHome = runtimeHome()) {
     typeof seed.version !== 'string' ||
     seed.version === '' ||
     !isUsableBundlePackage(seedPackageDir, marketManifest) ||
+    !hasUsableMarketplaceClient(seedPackageDir, marketManifest) ||
     marketManifest.version !== seed.version
   ) {
     throw new Error(`bundled ${MARKETPLACE_PACKAGE} seed manifest is inconsistent`)
@@ -379,6 +400,8 @@ export async function ensureMarketplace(runtimeDir, dshHome = runtimeHome()) {
   }
   const seedMatchesDependency = seedMatchesSpec(seed, dependencySpec)
   const installedIsOwnedSeed = isOwnedSeedPackage(profileDir, installedPackage)
+  const installedClientUsable = installedPackage !== undefined &&
+    hasUsableMarketplaceClient(dirname(activeManifestPath), installedPackage)
   const isPackageCompatible = (manifest) => {
     if (!manifest) return false
     if (typeof evaluatePluginCompatibility !== 'function') return true
@@ -422,12 +445,12 @@ export async function ensureMarketplace(runtimeDir, dshHome = runtimeHome()) {
   // completed physical state so this migration can finish pinning the profile
   // without copying over the package a second time.
   const installedSeedNeedsPin = installedIsOwnedSeed &&
+    installedClientUsable &&
     installedPackage.version === seed.version &&
     seedMatchesDependency &&
     dependencySpec !== seed.version
-  const installedPackageUsable = installedPackage !== undefined && (
-    !installedIsOwnedSeed || seedMatchesDependency
-  )
+  const installedPackageUsable = installedPackage !== undefined &&
+    installedClientUsable && (!installedIsOwnedSeed || seedMatchesDependency)
 
   let status = 'unchanged'
   let bundleEnabled = hasBundle
@@ -465,13 +488,15 @@ export async function ensureMarketplace(runtimeDir, dshHome = runtimeHome()) {
       bundleEnabled = true
       suspension = undefined
       status = 'repaired'
+    } else if (seedMatchesDependency) {
+      installSeed('repaired')
     } else {
       status = 'suspended'
     }
   } else if (!hasBundle && !hasDependency && markerSchema === 0) {
     installSeed('installed')
   } else if (hasBundle && !hasDependency) {
-    if (installedPackage !== undefined) {
+    if (installedPackage !== undefined && installedClientUsable) {
       // A package can survive an interrupted manifest write or pnpm command.
       // Re-register what is physically present instead of replacing it with
       // the build-time seed and potentially downgrading a user update.
@@ -491,7 +516,7 @@ export async function ensureMarketplace(runtimeDir, dshHome = runtimeHome()) {
   } else if (hasBundle && hasDependency && installedSeedNeedsPin) {
     pinInstalledSeed('repaired')
   } else if (hasBundle && hasDependency && !installedPackageUsable) {
-    if (installedPackage === undefined && seedMatchesDependency) {
+    if (seedMatchesDependency) {
       installSeed('repaired')
     } else {
       // The seed cannot safely stand in for a missing beta, git, file, alias,
