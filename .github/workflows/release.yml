@@ -132,6 +132,17 @@ jobs:
           DSH_DESKTOP_MARKETPLACE_REGISTRY: ${{ needs.prepare.outputs.marketplace_registry }}
           CI: 'true'
 
+      - name: Install isolated browser test tooling
+        if: runner.os == 'Windows'
+        run: npm install --prefix .dsh-browser-tools --no-save --package-lock=false --ignore-scripts playwright@1.63.0
+
+      - name: Verify Windows marketplace recovery and settings entry
+        if: runner.os == 'Windows'
+        run: >-
+          node scripts/marketplace-ui-test.mjs
+          node-runtime/node.exe rt
+          .dsh-browser-tools/node_modules/playwright/index.mjs
+
       - name: Archive prepared runtime
         run: tar -czf prepared-runtime.tar.gz rt node-runtime
 
