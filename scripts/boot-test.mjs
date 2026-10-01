@@ -1,7 +1,7 @@
 // Boot-test a DSH runtime: spawns `node <runtime>/lib/bin.js web --port 0`
 // with the desktop-owned prompt overlay, adding `--no-open` when supported,
 // waits for the readiness line or a crash, prints the first N lines.
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync } from 'node:fs'
 import { spawn, spawnSync } from 'node:child_process'
 import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -133,6 +133,18 @@ child.on('exit', (code, signal) => {
     console.log(`\n[EXITED code=${code} signal=${signal}]`)
     console.log('--- last output ---')
     console.log(out.slice(-4000))
+    // Print startup diagnostic logs if generated
+    try {
+      const logDir = join(home, 'logs')
+      if (existsSync(logDir)) {
+        for (const file of readdirSync(logDir)) {
+          if (file.startsWith('startup-') && file.endsWith('.log')) {
+            console.log(`\n=== DIAGNOSTIC LOG: ${file} ===`)
+            console.log(readFileSync(join(logDir, file), 'utf8'))
+          }
+        }
+      }
+    } catch {}
     process.exit(1)
   }
 })
