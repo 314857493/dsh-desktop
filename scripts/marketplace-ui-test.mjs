@@ -63,15 +63,11 @@ try {
   const errors = []
   page.on('pageerror', (error) => errors.push(error.message))
   await page.goto(url)
-  const continueButton = page.getByRole('button', { name: /^(继续|Continue)$/ })
-  // Both onboarding steps are optional on different supported DSH releases.
-  if (await continueButton.waitFor({ state: 'visible', timeout: 5000 }).then(() => true, () => false)) {
-    await continueButton.click()
-  }
-  const laterButton = page.getByRole('button', { name: /^(稍后配置|Configure later)$/ })
-  if (await laterButton.waitFor({ state: 'visible', timeout: 5000 }).then(() => true, () => false)) {
-    await laterButton.click()
-  }
+  // This fresh, keyless profile must complete both first-run steps. Their
+  // settings data loads asynchronously; a short optional wait can miss them
+  // and leave the blocking modal over Settings on a slower CI runner.
+  await page.getByRole('button', { name: /^(继续|Continue)$/ }).click({ timeout: 60000 })
+  await page.getByRole('button', { name: /^(稍后配置|Configure later)$/ }).click({ timeout: 60000 })
   await page.getByRole('button', { name: /^(设置|Settings)$/ }).click()
   await page.getByRole('button', { name: /^(插件市场|Plugin Market)$/ }).click({ timeout: 20000 })
   await page.getByRole('heading', { name: /^(插件市场|Plugin Market)$/ }).waitFor()
