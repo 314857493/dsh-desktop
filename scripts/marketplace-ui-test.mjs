@@ -3,7 +3,7 @@
 // interrupted profile update. Playwright lives in disposable CI tooling, not
 // in the shipped runtime. Usage: node marketplace-ui-test.mjs <node> <rt> <playwright/index.mjs>
 import assert from 'node:assert/strict'
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve, delimiter } from 'node:path'
 import { spawn } from 'node:child_process'
@@ -32,6 +32,21 @@ try {
   // Keep the backend and manifest intact: this is the case an HTTP-only smoke
   // test misses. The same preparation the desktop uses must restore the UI.
   rmSync(join(packageDir, client))
+  assert.equal((await ensureMarketplace(runtime, home)).status, 'repaired')
+
+  // A client file alone is insufficient. Older/incomplete package metadata
+  // can omit its declaration, leaving the host alive but no client row.
+  const damagedManifest = structuredClone(manifest)
+  delete damagedManifest.dsh.client
+  delete damagedManifest.exports['./client']
+  writeFileSync(join(packageDir, 'package.json'), JSON.stringify(damagedManifest))
+  assert.equal((await ensureMarketplace(runtime, home)).status, 'repaired')
+  const restored = JSON.parse(readFileSync(join(packageDir, 'package.json'), 'utf8'))
+  assert.deepEqual(restored.dsh.client, manifest.dsh.client)
+  assert.deepEqual(restored.exports['./client'], clientExport)
+
+  // A patch path can exist while composing no marketplace entry at all.
+  writeFileSync(join(packageDir, manifest.dsh.bundle.patch), '')
   assert.equal((await ensureMarketplace(runtime, home)).status, 'repaired')
 
   const ready = new Promise((resolveReady, reject) => {
@@ -75,7 +90,7 @@ try {
   // registry being online or install a plugin just to verify the entry.
   await page.getByRole('button', { name: /^(发现|Discover)$/ }).waitFor({ timeout: 20000 })
   assert.deepEqual(errors, [], 'marketplace page must render without uncaught client errors')
-  console.log(`[MARKETPLACE UI] dshmarket@${initial.version}: damaged client repaired; settings entry and panel rendered`)
+  console.log(`[MARKETPLACE UI] dshmarket@${initial.version}: missing client, missing declaration, and empty patch repaired; settings entry and panel rendered`)
 } catch (error) {
   console.error(redact(startup.slice(-4000)))
   throw new Error(redact(String(error)))

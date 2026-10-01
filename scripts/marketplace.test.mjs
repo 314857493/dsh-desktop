@@ -49,6 +49,7 @@ function createFixture(t, {
   })
   writeFileSync(join(seedPackage, 'cordis.patch.yml'), '- insert: []\n')
   writeFileSync(join(seedPackage, 'seed.txt'), 'bundled seed\n')
+  addMarketplaceClient(seedPackage)
 
   const appBootDir = join(runtime, 'node_modules', '@deepseek-ai', 'dsh-app-boot')
   writeJson(join(appBootDir, 'package.json'), { type: 'module' })
@@ -124,6 +125,7 @@ function writeInstalledMarketplace(profileDir, version) {
     dsh: { bundle: { patch: 'cordis.patch.yml' } },
   })
   writeFileSync(join(installed, 'cordis.patch.yml'), '- insert: []\n')
+  addMarketplaceClient(installed)
   return installed
 }
 
@@ -675,4 +677,79 @@ test('pinning a current desktop seed also repairs its broken frontend', async (t
   assert.equal((await ensureMarketplace(fixture.runtime, fixture.home)).status, 'repaired')
   assert.ok(existsSync(client))
   assert.equal(profileManifest(fixture.profileDir).dependencies.dshmarket, SEED_VERSION)
+})
+
+test('a suspended older incompatible package is upgraded before its bundle is restored', async (t) => {
+  const fixture = createFixture(t)
+  initializeProfile(fixture.profileDir, { dependencies: { dshmarket: '1.41.0' } })
+  writeInstalledMarketplace(fixture.profileDir, '1.41.0')
+  writeJson(join(fixture.profileDir, MARKETPLACE_MARKER), {
+    schemaVersion: MARKETPLACE_SCHEMA_VERSION,
+    suspended: { reason: 'missing-package', dependencySpec: '1.41.0' },
+  })
+  const appBoot = join(fixture.runtime, 'node_modules', '@deepseek-ai', 'dsh-app-boot', 'lib', 'index.js')
+  writeFileSync(appBoot, readFileSync(appBoot, 'utf8') + `
+export function evaluatePluginCompatibility(manifest) {
+  return manifest.version === '1.41.0' ? { exempted: false } : undefined
+}
+`)
+  const result = await ensureMarketplace(fixture.runtime, fixture.home)
+  assert.equal(result.status, 'updated')
+  assert.equal(result.version, SEED_VERSION)
+  assert.equal(profileManifest(fixture.profileDir).dependencies.dshmarket, SEED_VERSION)
+  assert.ok(profileManifest(fixture.profileDir).dsh.profile.bundles.includes('dshmarket'))
+})
+
+test('a legacy dependency without a bundle registration is migrated instead of treated as removed', async (t) => {
+  const fixture = createFixture(t)
+  initializeProfile(fixture.profileDir, { dependencies: { dshmarket: '^1.0.0' } })
+  writeInstalledMarketplace(fixture.profileDir, '1.0.0')
+  const result = await ensureMarketplace(fixture.runtime, fixture.home)
+  assert.equal(result.status, 'updated')
+  assert.equal(result.version, SEED_VERSION)
+  assert.ok(profileManifest(fixture.profileDir).dsh.profile.bundles.includes('dshmarket'))
+})
+
+test('a handled profile keeps an explicitly removed bundle disabled', async (t) => {
+  const fixture = createFixture(t)
+  await ensureMarketplace(fixture.runtime, fixture.home)
+  const profile = profileManifest(fixture.profileDir)
+  profile.dsh.profile.bundles = profile.dsh.profile.bundles.filter(name => name !== 'dshmarket')
+  writeJson(join(fixture.profileDir, 'package.json'), profile)
+  assert.equal((await ensureMarketplace(fixture.runtime, fixture.home)).status, 'previouslyRemoved')
+  assert.ok(!profileManifest(fixture.profileDir).dsh.profile.bundles.includes('dshmarket'))
+})
+
+test('a missing legacy dependency is recorded as suspended and resumes after installation', async (t) => {
+  const fixture = createFixture(t)
+  initializeProfile(fixture.profileDir, { dependencies: { dshmarket: '9.9.9-beta.1' } })
+  assert.equal((await ensureMarketplace(fixture.runtime, fixture.home)).status, 'suspended')
+  assert.equal(JSON.parse(readFileSync(join(fixture.profileDir, MARKETPLACE_MARKER))).suspended.dependencySpec, '9.9.9-beta.1')
+  writeInstalledMarketplace(fixture.profileDir, '9.9.9-beta.1')
+  assert.equal((await ensureMarketplace(fixture.runtime, fixture.home)).status, 'repaired')
+  assert.ok(profileManifest(fixture.profileDir).dsh.profile.bundles.includes('dshmarket'))
+})
+
+test('a seeded package with client bytes but no client declaration is repaired', async (t) => {
+  const fixture = createFixture(t)
+  const seedDir = join(fixture.runtime, 'marketplace-seed', 'node_modules', 'dshmarket')
+  addMarketplaceClient(seedDir)
+  await ensureMarketplace(fixture.runtime, fixture.home)
+  const installed = join(fixture.profileDir, 'node_modules', 'dshmarket')
+  const manifestPath = join(installed, 'package.json')
+  const manifest = JSON.parse(readFileSync(manifestPath))
+  delete manifest.dsh.client
+  delete manifest.exports['./client']
+  writeJson(manifestPath, manifest)
+  assert.equal((await ensureMarketplace(fixture.runtime, fixture.home)).status, 'repaired')
+  assert.equal(JSON.parse(readFileSync(manifestPath)).dsh.client.platform, 'web')
+})
+
+test('an empty seeded bundle patch is repaired instead of silently composing no marketplace', async (t) => {
+  const fixture = createFixture(t)
+  await ensureMarketplace(fixture.runtime, fixture.home)
+  const patch = join(fixture.profileDir, 'node_modules', 'dshmarket', 'cordis.patch.yml')
+  writeFileSync(patch, '')
+  assert.equal((await ensureMarketplace(fixture.runtime, fixture.home)).status, 'repaired')
+  assert.equal(readFileSync(patch, 'utf8'), '- insert: []\n')
 })
