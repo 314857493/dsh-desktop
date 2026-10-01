@@ -44,8 +44,10 @@ const SPEC_RE = [
   /from\s+["']([^"']+)["']/g,
   /import\s*\(\s*["']([^"']+)["']\s*\)/g,
   /require\s*\(\s*["']([^"']+)["']\s*\)/g,
-  /^plugin:\s*["']?([^\s"']+)/gm,
+  /^\s*(?:plugin|name):\s*["']?([^\s"']+)/gm,
 ]
+
+const IGNORED_SPECS = new Set(['AppKit'])
 
 function specsOf(file) {
   let text
@@ -56,8 +58,9 @@ function specsOf(file) {
     let m
     while ((m = re.exec(text)) !== null) {
       const spec = m[1]
-      // Cordis service names, slot names and template refs are not packages.
-      if (spec.includes('$') || spec.includes('.')) continue
+      // Cordis service names, slot names, templates and non-package identifiers are not packages.
+      if (spec.includes('$') || spec.includes('.') || !/^[@a-zA-Z0-9_\-]/.test(spec)) continue
+      if (IGNORED_SPECS.has(spec)) continue
       specs.add(spec)
     }
   }
@@ -155,6 +158,7 @@ for (;;) {
     join(ROOT, 'config'),
     join(ROOT, 'node_modules', '@deepseek-ai'),
     join(ROOT, 'node_modules', '.pnpm', 'node_modules', '@deepseek-ai'),
+    ...copied.map((pkg) => join(HOIST, ...pkg.split('/'))),
   ]
   const files = scanDirs.flatMap((d) => (existsSync(d) ? walk(d) : []))
   const missing = new Map() // spec -> example file
