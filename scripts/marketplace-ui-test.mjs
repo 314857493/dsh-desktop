@@ -15,6 +15,7 @@ if (!node || !runtimeArg || !playwrightPath) {
   throw new Error('usage: marketplace-ui-test.mjs <node> <runtime> <playwright/index.mjs>')
 }
 const runtime = resolve(runtimeArg)
+const nodeExecutable = resolve(node)
 const { chromium } = await import(pathToFileURL(resolve(playwrightPath)).href)
 const home = mkdtempSync(join(tmpdir(), 'dsh-marketplace-ui-'))
 let server
@@ -35,13 +36,13 @@ try {
 
   const ready = new Promise((resolveReady, reject) => {
     const timer = setTimeout(() => reject(new Error('DSH startup timed out')), 60000)
-    server = spawn(node, [join(runtime, 'lib', 'bin.js'), 'web', '--no-open', '--host', '127.0.0.1', '--port', '0'], {
+    server = spawn(nodeExecutable, [join(runtime, 'lib', 'bin.js'), 'web', '--no-open', '--host', '127.0.0.1', '--port', '0'], {
       cwd: runtime,
       env: {
         ...process.env,
         DSH_HOME: home,
         DSH_TELEMETRY_DISABLED: '1',
-        PATH: `${dirname(resolve(node))}${delimiter}${process.env.PATH ?? ''}`,
+        PATH: `${dirname(nodeExecutable)}${delimiter}${process.env.PATH ?? ''}`,
       },
       stdio: ['ignore', 'pipe', 'pipe'],
     })
