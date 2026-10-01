@@ -501,6 +501,33 @@ export async function ensureMarketplace(runtimeDir, dshHome = runtimeHome()) {
 
   if (profileChanged) writeProfileManifest(profileDir, profile)
   writePolicyAtomic(profileDir, bundleEnabled, loadOverlayPatches)
+
+  // Ensure compatibility.json exempts the bundled marketplace version on
+  // prerelease / newer DSH runtimes where strict peer checking would reject it.
+  try {
+    const appBootPkgPath = join(runtimeDir, 'node_modules', '@deepseek-ai', 'dsh-app-boot', 'package.json')
+    if (existsSync(appBootPkgPath)) {
+      const appBootPkg = readJson(appBootPkgPath)
+      const dshVersion = appBootPkg.version
+      if (typeof dshVersion === 'string' && dshVersion !== '') {
+        const compatPath = join(profileDir, 'compatibility.json')
+        let compat = {}
+        try {
+          if (existsSync(compatPath)) compat = readJson(compatPath)
+        } catch {}
+        if (typeof compat !== 'object' || compat === null || Array.isArray(compat)) compat = {}
+        const key = `${MARKETPLACE_PACKAGE}@${seed.version}`
+        const versions = Array.isArray(compat[key]) ? compat[key] : []
+        if (!versions.includes(dshVersion)) {
+          compat[key] = [...versions, dshVersion]
+          writeJsonAtomic(compatPath, compat)
+        }
+      }
+    }
+  } catch (error) {
+    console.warn(`ensure-marketplace: failed to record compatibility exemption: ${String(error)}`)
+  }
+
   writeJsonAtomic(markerPath, {
     schemaVersion: MARKETPLACE_SCHEMA_VERSION,
     package: MARKETPLACE_PACKAGE,
