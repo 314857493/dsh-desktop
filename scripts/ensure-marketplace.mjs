@@ -163,23 +163,30 @@ function seedIsNewerThanInstalled(seed, installedPackage) {
     compareVersions(bundled, installed) > 0
 }
 
-function isOwnedSeedPackage(profileDir, installedPackage) {
-  if (installedPackage === undefined) return false
+function readOwnedSeedVersion(profileDir, installedManifest) {
   const ownershipPath = join(
     profileDir,
     'node_modules',
     MARKETPLACE_PACKAGE,
     MARKETPLACE_SEED_OWNERSHIP,
   )
-  if (!existsSync(ownershipPath)) return false
+  if (!existsSync(ownershipPath)) return undefined
   try {
     const ownership = readJson(ownershipPath)
-    return ownership?.schemaVersion === 1 &&
+    const valid = ownership?.schemaVersion === 1 &&
       ownership?.package === MARKETPLACE_PACKAGE &&
       typeof ownership?.version === 'string' &&
-      installedPackage.version === ownership.version
+      parseVersion(ownership.version) !== undefined
+    if (!valid) return undefined
+    // Missing metadata does not erase desktop ownership. A readable identity
+    // that differs, however, is evidence that another package replaced it.
+    if (typeof installedManifest?.name === 'string' &&
+      installedManifest.name !== MARKETPLACE_PACKAGE) return undefined
+    if (typeof installedManifest?.version === 'string' &&
+      installedManifest.version !== ownership.version) return undefined
+    return ownership.version
   } catch {
-    return false
+    return undefined
   }
 }
 
@@ -389,10 +396,12 @@ export async function ensureMarketplace(runtimeDir, dshHome = runtimeHome()) {
   )
   const activeManifestPath = join(profileDir, 'node_modules', MARKETPLACE_PACKAGE, 'package.json')
   const dependencySpec = profile.dependencies[MARKETPLACE_PACKAGE]
+  let installedManifest
   let installedPackage
   if (existsSync(activeManifestPath)) {
     try {
       const candidate = readJson(activeManifestPath)
+      installedManifest = candidate
       if (isUsableBundlePackage(dirname(activeManifestPath), candidate)) {
         installedPackage = candidate
       }
@@ -402,7 +411,9 @@ export async function ensureMarketplace(runtimeDir, dshHome = runtimeHome()) {
     }
   }
   const seedMatchesDependency = seedMatchesSpec(seed, dependencySpec)
-  const installedIsOwnedSeed = isOwnedSeedPackage(profileDir, installedPackage)
+  const ownedSeedVersion = readOwnedSeedVersion(profileDir, installedManifest)
+  const installedIsOwnedSeed = installedPackage !== undefined &&
+    ownedSeedVersion === installedPackage.version
   const installedClientUsable = installedPackage !== undefined &&
     hasUsableMarketplaceClient(dirname(activeManifestPath), installedPackage)
   const isPackageCompatible = (manifest) => {
@@ -430,9 +441,9 @@ export async function ensureMarketplace(runtimeDir, dshHome = runtimeHome()) {
   // the new core runtime. Comparing ownership only with the *current* seed
   // made every old desktop seed look user-managed after an app update, which
   // could leave an incompatible plugin in the boot-critical bundle list.
-  const installedIsStaleSeed = installedIsOwnedSeed &&
-    installedPackage.version !== seed.version &&
-    dependencySpec === installedPackage.version
+  const installedIsStaleSeed = ownedSeedVersion !== undefined &&
+    ownedSeedVersion !== seed.version &&
+    dependencySpec === ownedSeedVersion
   // A package-manager update replaces the marketplace directory and drops
   // the desktop ownership marker. The dependency range still records what
   // the user authorized, though: when the bundled seed is newer and remains

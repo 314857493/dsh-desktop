@@ -29,6 +29,18 @@ try {
   const clientExport = manifest.exports?.['./client']
   const client = typeof clientExport === 'string' ? clientExport : clientExport?.default
   assert.equal(typeof client, 'string', 'marketplace must export a client bundle')
+  // A damaged old desktop copy still has its independent ownership record.
+  // It must upgrade even when package.json can no longer identify its version.
+  const profileManifestPath = join(initial.profileDir, 'package.json')
+  const oldProfile = JSON.parse(readFileSync(profileManifestPath, 'utf8'))
+  oldProfile.dependencies.dshmarket = '1.0.0'
+  writeFileSync(profileManifestPath, JSON.stringify(oldProfile))
+  writeFileSync(join(packageDir, '.dsh-desktop-seed.json'), JSON.stringify({
+    schemaVersion: 1, package: 'dshmarket', version: '1.0.0',
+  }))
+  rmSync(join(packageDir, 'package.json'))
+  assert.equal((await ensureMarketplace(runtime, home)).status, 'updated')
+  assert.equal(JSON.parse(readFileSync(profileManifestPath, 'utf8')).dependencies.dshmarket, initial.version)
   // Keep the backend and manifest intact: this is the case an HTTP-only smoke
   // test misses. The same preparation the desktop uses must restore the UI.
   rmSync(join(packageDir, client))
@@ -90,7 +102,7 @@ try {
   // registry being online or install a plugin just to verify the entry.
   await page.getByRole('button', { name: /^(发现|Discover)$/ }).waitFor({ timeout: 20000 })
   assert.deepEqual(errors, [], 'marketplace page must render without uncaught client errors')
-  console.log(`[MARKETPLACE UI] dshmarket@${initial.version}: missing client, missing declaration, and empty patch repaired; settings entry and panel rendered`)
+  console.log(`[MARKETPLACE UI] dshmarket@${initial.version}: damaged old seed upgraded; missing client, missing declaration, and empty patch repaired; settings entry and panel rendered`)
 } catch (error) {
   console.error(redact(startup.slice(-4000)))
   throw new Error(redact(String(error)))

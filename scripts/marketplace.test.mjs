@@ -753,3 +753,31 @@ test('an empty seeded bundle patch is repaired instead of silently composing no 
   assert.equal((await ensureMarketplace(fixture.runtime, fixture.home)).status, 'repaired')
   assert.equal(readFileSync(patch, 'utf8'), '- insert: []\n')
 })
+
+test('a damaged older desktop seed is upgraded using its ownership record', async (t) => {
+  for (const state of ['missing-manifest', 'invalid-manifest', 'missing-patch']) {
+    await t.test(state, async t => {
+      const fixture = createFixture(t)
+      initializeProfile(fixture.profileDir, { dependencies: { dshmarket: '1.0.0' }, marketplaceBundle: true })
+      const installed = writeInstalledMarketplace(fixture.profileDir, '1.0.0')
+      writeJson(join(installed, MARKETPLACE_SEED_OWNERSHIP), {schemaVersion: 1, package: 'dshmarket', version: '1.0.0'})
+      if (state === 'missing-manifest') rmSync(join(installed, 'package.json'))
+      if (state === 'invalid-manifest') writeFileSync(join(installed, 'package.json'), 'null')
+      if (state === 'missing-patch') rmSync(join(installed, 'cordis.patch.yml'))
+      const result = await ensureMarketplace(fixture.runtime, fixture.home)
+      assert.equal(result.status, 'updated')
+      assert.equal(result.version, SEED_VERSION)
+      assert.equal(profileManifest(fixture.profileDir).dependencies.dshmarket, SEED_VERSION)
+    })
+  }
+})
+
+test('an ownership record cannot replace a different installed version with a broken patch', async (t) => {
+  const fixture = createFixture(t)
+  initializeProfile(fixture.profileDir, { dependencies: { dshmarket: '1.0.0' }, marketplaceBundle: true })
+  const installed = writeInstalledMarketplace(fixture.profileDir, '9.9.9')
+  writeJson(join(installed, MARKETPLACE_SEED_OWNERSHIP), {schemaVersion: 1, package: 'dshmarket', version: '1.0.0'})
+  rmSync(join(installed, 'cordis.patch.yml'))
+  assert.equal((await ensureMarketplace(fixture.runtime, fixture.home)).status, 'suspended')
+  assert.equal(JSON.parse(readFileSync(join(installed, 'package.json'))).version, '9.9.9')
+})
