@@ -8,11 +8,77 @@ DeepSeek Harness 上游版本，以便复现构建和排查兼容性问题。
 
 ## [Unreleased]
 
+## [0.1.33] - 2026-10-01
+
 ### 修复
 
 - 插件商城存在客户端文件但缺少客户端声明，或 bundle patch 为空时，不再误判为已安装；启动前恢复完整的内置商城包。
 - 旧 Profile 中仍声明安装商城但缺少 bundle 登记时完成迁移；暂停的旧版商城恢复时先执行兼容升级。
 - 桌面自带旧版商城的 manifest 或 patch 损坏时，按独立 ownership 记录恢复并升级，不再因无法读取旧版本而只暂停商城。
+
+### 内置 DeepSeek Harness
+
+- 版本：`dsh-v0.2.0-rc.2`
+- Commit：`639ed015397290b3745d163aafe02ffee4aa3f84`
+- [上游 Release Notes](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.2.0-rc.2)
+
+#### ✨ 新增功能
+
+- macOS／Windows 桌面端可在菜单栏中管理和安装 dsh 命令，支持管理插件，无需另装 Node 或 pnpm。 @tianyicui
+
+#### 🐛 问题修复
+
+- 修复新建终端菜单重复列出同名 shell 的问题。 @LegGasai
+- 修复切换会话或返回对话后计划审阅无法打开、「查看全文」消失的问题。 @LegGasai
+- 修复设置页关闭「显示代码工作视图」后无法调整 Agent 预设的限制。 @lsdsjy
+- 修复持久 PowerShell 在完成状态后带有空格时无法正确识别命令结束、丢失退出码或泄露内部标记的问题。 @turtle2099
+- 修复 macOS Intel 版桌面端内置 Node 的签名权限，避免 Office 技能命令启动时崩溃。 @07akioni
+- 修复 macOS 和 Linux 从图形入口启动桌面端时缺少登录 shell 环境的问题，使工具路径、代理等用户环境配置可供会话使用。 @lsdsjy
+
+#### 🎨 体验优化
+
+- 模型选择器在模型较多时提供搜索，支持模糊匹配和键盘选择。 @MrCroxx
+- 侧栏文件页可直接用本地应用打开当前文件夹，并记住应用选择。 @yudshj
+- 优化聊天耗时、过程信息、字号和深色主题样式，优化动画运行开销。 @yixiangihsiang, @imccyu
+- 精简插件安装引导，并区分已安装、不兼容和内置插件的升级提示。 @Yifffan, @turtle2099
+- 自动化任务投递的提醒改为明确标注的用户定时消息，不再要求 Agent 仅将其作为不可信提醒内容转述。 @Chinesezjc
+- 加强 Bash 与 PowerShell 的工具提示，提醒 Agent 在删除或移动前核对实际目标路径，以避免路径误判。 @turtle2099
+
+#### ⚠️ 其他变更
+
+- Windows 沙箱权限脚本改为经授权后一次完成诊断与修复，保留修改前备份和恢复命令。 @Elevator14B
+- 更新第三方模型目录与兼容适配至 pi-ai 0.87.1；部分旧模型 ID 被移除，已保存的选择可能需要重新选择。 @tianyicui
+- 实验性添加异步问答模式，需要手动配置开启：等待超时后 Agent 可继续独立工作，用户仍可稍后回答。 @Magolor
+
+#### New Features
+
+- Bundle the dsh command with macOS and Windows Desktop for plugin management, without requiring a separate Node or pnpm installation. The command needs to be installed with the "Manage dsh command" menu bar item. by @tianyicui
+
+#### Bug Fixes
+
+- Remove duplicate shell names from the new-terminal menu. by @LegGasai
+- Fix plan reviews failing to open and losing their full-text action after switching sessions or returning to the conversation. by @LegGasai
+- Fix Agent preset changes being unavailable in Settings when “Show coding view” is disabled. by @lsdsjy
+- Fix persistent PowerShell failing to recognize command completion, losing exit codes, or exposing internal markers when completion status lines contain trailing spaces. by @turtle2099
+- Fix signing permissions for the bundled Node runtime in Intel Mac builds to prevent Office skill commands from crashing at startup. by @07akioni
+- Load the login-shell environment for graphical Desktop launches on macOS and Linux, making configured tool paths, proxies, and other user environment settings available to sessions. by @lsdsjy
+
+#### Improvements
+
+- Add search for longer model lists, with fuzzy matching and keyboard selection. by @MrCroxx
+- Open the current folder in a local app directly from the Files sidebar, with the selected app remembered. by @yudshj
+- Refine elapsed-time displays, process details, typography, and dark-theme styling, and reduce animation overhead. by @yixiangihsiang, @imccyu
+- Simplify plugin installation guidance and distinguish upgrade advice for installed, incompatible, and bundled plugins. by @Yifffan, @turtle2099
+- Frame delivered automation reminders as scheduled user messages, removing the instruction to treat them only as untrusted reminder content to relay. by @Chinesezjc
+- Strengthen Bash and PowerShell tool guidance to remind the Agent to verify resolved target paths before deleting or moving files, helping prevent path mistakes. by @turtle2099
+
+#### Chores
+
+- Combine Windows sandbox permission diagnosis and repair in one authorized run, retaining pre-change backups and recovery commands. by @Elevator14B
+- Update the third-party model catalog and compatibility integration to pi-ai 0.87.1. Some older model IDs have been removed, so saved selections may need to be reselected. by @tianyicui
+- Add an experimental asynchronous question mode that requires manual configuration to enable: the Agent can continue independent work after the wait expires, while users can still answer later. by @Magolor
+
+Full Changelog: https://github.com/deepseek-ai/deepseek-harness/compare/dsh-v0.2.0-rc.1...dsh-v0.2.0-rc.2
 
 ## [0.1.32] - 2026-10-01
 
@@ -1326,5 +1392,7 @@ Full Changelog: https://github.com/deepseek-ai/deepseek-harness/compare/dsh-v0.1
 
 [0.1.31]: https://github.com/314857493/dsh-desktop/compare/v0.1.30...v0.1.31
 
-[Unreleased]: https://github.com/314857493/dsh-desktop/compare/v0.1.32...HEAD
 [0.1.32]: https://github.com/314857493/dsh-desktop/compare/v0.1.31...v0.1.32
+
+[Unreleased]: https://github.com/314857493/dsh-desktop/compare/v0.1.33...HEAD
+[0.1.33]: https://github.com/314857493/dsh-desktop/compare/v0.1.32...v0.1.33
