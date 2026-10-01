@@ -123,6 +123,9 @@ referenced.add('@deepseek-ai/dsh-host-open-in-app')
 referenced.add('@deepseek-ai/dsh-session-log-export')
 referenced.add('@deepseek-ai/dsh-client-file-upload')
 referenced.add('@deepseek-ai/dsh-client-ui-deliverables')
+referenced.add('negotiator')
+referenced.add('content-type')
+referenced.add('compression')
 
 const keep = new Set(referenced)
 const pending = [...referenced]
