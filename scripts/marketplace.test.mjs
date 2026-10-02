@@ -153,6 +153,20 @@ test('fresh profile receives an exact profile-managed marketplace and restart po
   assert.equal(marker.schemaVersion, MARKETPLACE_SCHEMA_VERSION)
 })
 
+test('an installer overlay cannot leave runtime markets shadowing the profile package', async (t) => {
+  const fixture = createFixture(t)
+  for (const modules of ['node_modules', 'node_modules/.pnpm/node_modules']) {
+    writeInstalledMarketplace(join(fixture.runtime, modules, '..'), '1.0.0')
+  }
+  const result = await ensureMarketplace(fixture.runtime, fixture.home)
+  assert.equal(result.version, SEED_VERSION)
+  assert.equal(existsSync(join(fixture.runtime, 'node_modules', 'dshmarket')), false)
+  assert.equal(existsSync(join(fixture.runtime, 'node_modules', '.pnpm', 'node_modules', 'dshmarket')), false)
+  assert.equal(existsSync(join(fixture.runtime, 'marketplace-legacy-backup')), true)
+  assert.equal(profileManifest(fixture.profileDir).dependencies.dshmarket, SEED_VERSION)
+  assert.equal((await ensureMarketplace(fixture.runtime, fixture.home)).status, 'alreadyInstalled')
+})
+
 test('fresh profile accepts structured runtime templates and preserves their reload policy', async (t) => {
   const fixture = createFixture(t, { structuredProfileTemplate: true })
   const result = await ensureMarketplace(fixture.runtime, fixture.home)

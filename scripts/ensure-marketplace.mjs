@@ -12,6 +12,7 @@
 import {
   cpSync,
   existsSync,
+  lstatSync,
   mkdirSync,
   readFileSync,
   renameSync,
@@ -327,6 +328,27 @@ function writePolicyAtomic(profileDir, enabled, loadOverlayPatches) {
   return true
 }
 
+// Installers overlay the previous resource tree: files omitted from a newer
+// release can survive. DSH resolves installation packages before profile
+// packages, so an old in-box market shadows even a successfully updated seed.
+// Keep a recoverable copy outside node_modules lookup instead of deleting it.
+export function retireLegacyRuntimeMarketplace(runtimeDir) {
+  for (const modules of [
+    join(runtimeDir, 'node_modules'),
+    join(runtimeDir, 'node_modules', '.pnpm', 'node_modules'),
+  ]) {
+    const legacy = join(modules, MARKETPLACE_PACKAGE)
+    try { lstatSync(legacy) } catch (error) {
+      if (error.code === 'ENOENT') continue
+      throw error
+    }
+    const backup = join(runtimeDir, 'marketplace-legacy-backup')
+    mkdirSync(backup, { recursive: true })
+    renameSync(legacy, join(backup, `${MARKETPLACE_PACKAGE}-${Date.now()}-${process.pid}-${modules === join(runtimeDir, 'node_modules') ? 'direct' : 'hoisted'}`))
+    console.log(`ensure-marketplace: retired legacy runtime package ${legacy}`)
+  }
+}
+
 export async function ensureMarketplace(runtimeDir, dshHome = runtimeHome()) {
   const seedDir = join(runtimeDir, MARKETPLACE_SEED_DIR)
   const seedManifestPath = join(seedDir, 'manifest.json')
@@ -599,6 +621,7 @@ export async function ensureMarketplace(runtimeDir, dshHome = runtimeHome()) {
     console.warn(`ensure-marketplace: failed to record compatibility exemption: ${String(error)}`)
   }
 
+  retireLegacyRuntimeMarketplace(runtimeDir)
   writeJsonAtomic(markerPath, {
     schemaVersion: MARKETPLACE_SCHEMA_VERSION,
     package: MARKETPLACE_PACKAGE,
