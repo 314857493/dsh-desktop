@@ -19,7 +19,9 @@ tauri = { version = "2", features = [] }
 tauri-plugin-single-instance = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-opener = "2"
-tauri-plugin-updater = "2"
+# Windows and Linux update from raw NSIS/AppImage/DEB installers. ZIP
+# extraction is unused; macOS tar.gz support is unconditional in the plugin.
+tauri-plugin-updater = { version = "2", default-features = false, features = ["rustls-tls", "system-proxy"] }
 reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

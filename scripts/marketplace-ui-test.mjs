@@ -94,8 +94,22 @@ try {
   // settings data loads asynchronously; a short optional wait can miss them
   // and leave the blocking modal over Settings on a slower CI runner.
   await page.getByRole('button', { name: /^(继续|Continue)$/ }).click({ timeout: 60000 })
-  await page.getByRole('button', { name: /^(稍后配置|Configure later)$/ }).click({ timeout: 60000 })
-  await page.getByRole('button', { name: /^(设置|Settings)$/ }).click()
+  // RC.2 first offers account sign-in or an API key. The key editor retains
+  // the skip action; older runtimes open that editor directly.
+  const addApiKey = page.getByRole('button', { name: /^(添加 API Key|Add API Key|Add API key)$/ })
+  const configureLater = page.getByRole('button', { name: /^(稍后配置|Configure later)$/ })
+  await addApiKey.or(configureLater).waitFor({ timeout: 60000 })
+  if (await addApiKey.isVisible()) await addApiKey.click()
+  await configureLater.click({ timeout: 60000 })
+  const settings = page.getByRole('button', { name: /^(设置|Settings)$/ })
+  const accountMenu = page.getByRole('button', { name: /^(账号菜单|Account menu)$/ })
+  await settings.or(accountMenu).waitFor()
+  if (await accountMenu.isVisible()) {
+    await accountMenu.click()
+    await page.getByRole('menuitem', { name: /^(设置|Settings)/ }).click()
+  } else {
+    await settings.click()
+  }
   await page.getByRole('button', { name: /^(插件市场|Plugin Market)$/ }).click({ timeout: 20000 })
   await page.getByRole('heading', { name: /^(插件市场|Plugin Market)$/ }).waitFor()
   // The Discover tab belongs to the mounted market panel. Do not depend on the remote

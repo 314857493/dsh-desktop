@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import {
   lstatSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -37,6 +38,12 @@ test('prepared runtime materializes links into the source checkout', () => {
     symlinkSync(externalDependency, externalNestedLink, directoryLinkType)
     mkdirSync(join(packageLink, '..'), { recursive: true })
     symlinkSync(externalPackage, packageLink, directoryLinkType)
+    const dependencyLink = join(runtime, 'node_modules', '@deepseek-ai', 'cosmokit')
+    symlinkSync(externalDependency, dependencyLink, directoryLinkType)
+    // Workspace development dependencies can point back to their consumers.
+    // They must not be recursively copied into the hoisted deployment.
+    mkdirSync(join(externalDependency, 'node_modules'), { recursive: true })
+    symlinkSync(externalPackage, join(externalDependency, 'node_modules', 'consumer'), directoryLinkType)
 
     mkdirSync(internalTarget, { recursive: true })
     writeFileSync(join(internalTarget, 'package.json'), '{"name":"internal-package"}')
@@ -47,7 +54,11 @@ test('prepared runtime materializes links into the source checkout', () => {
     assert.ok(materialized.includes(join('node_modules', '@deepseek-ai', 'schemastery')))
     assert.equal(lstatSync(packageLink).isSymbolicLink(), false)
     assert.equal(readFileSync(join(packageLink, 'lib', 'index.js'), 'utf8'), 'export const schema = true\n')
-    assert.equal(lstatSync(nestedLink).isSymbolicLink(), false)
+    assert.equal(existsSync(nestedLink), false)
+    assert.equal(lstatSync(dependencyLink).isSymbolicLink(), false)
+    assert.equal(existsSync(join(dependencyLink, 'node_modules')), false)
+    rmSync(join(fixture, 'source'), { recursive: true, force: true })
+    assert.equal(JSON.parse(readFileSync(join(dependencyLink, 'package.json'))).name, '@deepseek-ai/cosmokit')
     assert.equal(lstatSync(internalLink).isSymbolicLink(), true)
     validateRuntimeLinks(runtime)
   } finally {

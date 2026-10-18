@@ -14,7 +14,7 @@ import {
   statSync,
   unlinkSync,
 } from 'node:fs'
-import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 function isInside(root, candidate) {
@@ -61,9 +61,12 @@ export function internalizeExternalRuntimeLinks(root) {
   const canonicalRoot = realpathSync(root)
   const materialized = []
 
-  // Materializing one workspace package can expose nested dependency links
-  // that were not reachable while the parent itself was a link. Repeat until
-  // every reachable link is either internal or has been copied into `rt`.
+  // The deploy uses a hoisted node_modules containing its dependency closure.
+  // Copy package contents, never the source checkout's node_modules: those
+  // contain development dependencies and cyclic workspace links. Dereferencing
+  // that graph recursively duplicates whole workspaces until the disk fills.
+  // Run patch-runtime afterwards so undeclared imports resolve against the
+  // deployed tree rather than accidentally succeeding in the source checkout.
   for (;;) {
     let changed = false
     for (const link of runtimeLinks(root)) {
@@ -82,6 +85,7 @@ export function internalizeExternalRuntimeLinks(root) {
         dereference: true,
         errorOnExist: true,
         force: false,
+        filter: (path) => path === target || !['node_modules', '.git'].includes(basename(path)),
       })
       unlinkSync(link)
       renameSync(temporary, link)
