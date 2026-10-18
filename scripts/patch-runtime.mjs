@@ -44,8 +44,8 @@ const SPEC_RE = [
   /from\s+["']([^"']+)["']/g,
   /import\s*\(\s*["']([^"']+)["']\s*\)/g,
   /require\s*\(\s*["']([^"']+)["']\s*\)/g,
-  /^\s*(?:plugin|name):\s*["']?([^\s"']+)/gm,
 ]
+const PATCH_SPEC_RE = /^\s*(?:plugin|name):\s*["']?([^\s"']+)/gm
 
 const IGNORED_SPECS = new Set(['AppKit'])
 
@@ -53,7 +53,10 @@ function specsOf(file) {
   let text
   try { text = readFileSync(file, 'utf8') } catch { return [] }
   const specs = new Set()
-  for (const re of SPEC_RE) {
+  // YAML plugin declarations are not JavaScript object properties. Treating
+  // every JS `name:` as a package scans bundled UI labels and tool names too.
+  const patterns = /\.ya?ml$/.test(file) ? [PATCH_SPEC_RE] : SPEC_RE
+  for (const re of patterns) {
     re.lastIndex = 0
     let m
     while ((m = re.exec(text)) !== null) {
@@ -180,7 +183,12 @@ for (;;) {
 
   console.log(`round ${round}: ${missing.size} missing specifiers`)
   for (const [spec, file] of missing) console.log(`  ${spec}   (from ${file.replace(ROOT, '<deploy>')})`)
+  const before = copied.length
   for (const spec of missing.keys()) copyPackage(spec)
+  if (copied.length === before) {
+    console.log(`no additional packages found; ${missing.size} unresolved specifiers remain for the boot test`)
+    break
+  }
 }
 
 // ---------------------------------------------------------------------------

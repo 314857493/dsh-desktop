@@ -265,6 +265,11 @@ if (!PACKAGE_ONLY) {
     '--config.node-linker=hoisted', '--config.allowUnusedPatches=true', rtDir,
   ], { cwd: REPO })
 
+  // Detach workspace packages before resolving runtime imports. Otherwise
+  // Node's realpath-based lookup can hide missing deployed dependencies by
+  // finding them in the source checkout's node_modules.
+  runNode('runtime-links', join(here, 'runtime-links.mjs'), [rtDir])
+
   // ---------- 2. patch runtime deps ----------
   step('4/13 patch-runtime (restore runtime-needed devDeps)')
   runNode('patch-runtime', join(here, 'patch-runtime.mjs'), [rtDir, REPO])
