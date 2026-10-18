@@ -8,12 +8,32 @@ DeepSeek Harness 上游版本，以便复现构建和排查兼容性问题。
 
 ## [Unreleased]
 
+## [0.1.36] - 2026-10-18
+
 ### 修复
 
 - 修复上游 workspace 依赖链接导致运行时打包递归复制开发依赖、耗尽 CI 磁盘的问题；在独立部署目录中补齐运行时依赖，避免错误借用源码依赖。
 - 修复依赖扫描将 JavaScript 名称属性当作 YAML 插件声明，以及无新增依赖时重复扫描和输出大量日志的问题。
 - 将 rustls 升级至 0.23.46，修复安全审计报告的 TLS 漏洞。
 - 关闭更新器未使用的 ZIP 解压功能，移除存在漏洞的 zip 依赖；保留 Windows/Linux 原始安装包和 macOS tar.gz 更新支持。
+
+### 内置 DeepSeek Harness
+
+- 版本：`dsh-v0.2.1-alpha.1` → `dsh-v0.2.1-rc.2`
+- Commit：`687f282e8625c6b8d11ff58211a90524be2e4317`
+- [上游 Release Notes](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.2.1-rc.2)
+
+#### 新增功能
+
+- 适配 DeepSeek-V4.1-Flash-1017 上线 @LegGasai
+- 适配 DeepSeek Search 与 Fetch API，可在网页搜索设置中开启 @yudshj, @LegGasai
+
+#### New Features
+
+- Add support for DeepSeek-V4.1-Flash-1017. by @LegGasai
+- Add support for DeepSeek Search and Fetch APIs, which can be enabled in Web Search settings. by @yudshj, @LegGasai
+
+Full Changelog: [dsh-v0.2.1-rc.1...dsh-v0.2.1-rc.2](https://github.com/deepseek-ai/deepseek-harness/compare/dsh-v0.2.1-rc.1...dsh-v0.2.1-rc.2)
 
 ## [0.1.35] - 2026-10-03
 
@@ -1563,5 +1583,7 @@ Full Changelog: https://github.com/deepseek-ai/deepseek-harness/compare/dsh-v0.1
 
 [0.1.34]: https://github.com/314857493/dsh-desktop/compare/v0.1.33...v0.1.34
 
-[Unreleased]: https://github.com/314857493/dsh-desktop/compare/v0.1.35...HEAD
 [0.1.35]: https://github.com/314857493/dsh-desktop/compare/v0.1.34...v0.1.35
+
+[Unreleased]: https://github.com/314857493/dsh-desktop/compare/v0.1.36...HEAD
+[0.1.36]: https://github.com/314857493/dsh-desktop/compare/v0.1.35...v0.1.36
