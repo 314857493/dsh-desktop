@@ -8,6 +8,38 @@ DeepSeek Harness 上游版本，以便复现构建和排查兼容性问题。
 
 ## [Unreleased]
 
+## [0.1.37] - 2026-10-24
+
+### 桌面端
+
+- 无桌面壳代码变更；此版本用于同步上游 DeepSeek Harness。
+
+### 内置 DeepSeek Harness
+
+- 版本：`dsh-v0.2.1-rc.2` → `dsh-v0.2.1-rc.3`
+- Commit：`1f81c047fc48fa190a683e469daa699857e9afe8`
+- [上游 Release Notes](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.2.1-rc.3)
+
+#### 体验优化
+
+- 新增左侧栏、会话视图和右侧栏的「更多」菜单，方便浏览和创建插件。 @Yifffan, @imccyu
+- 修复切换会话后，点击「新会话」找不回未发送草稿的问题。 @imccyu
+
+#### 其他变更
+
+- DeepSeek API Key 适配器的模型列表更新方式与账号登录模式保持一致。 @LegGasai
+
+#### Improvements
+
+- Add More menus to the left sidebar, conversation views, and right sidebar for browsing and creating plugins. by @Yifffan, @imccyu
+- Fix New Session losing an unsent draft after switching sessions. by @imccyu
+
+#### Chores
+
+- The DeepSeek API key adapter now updates its model list the same way as account sign-in. by @LegGasai
+
+Full Changelog: [dsh-v0.2.1-rc.2...dsh-v0.2.1-rc.3](https://github.com/deepseek-ai/deepseek-harness/compare/dsh-v0.2.1-rc.2...dsh-v0.2.1-rc.3)
+
 ## [0.1.36] - 2026-10-18
 
 ### 修复
@@ -1585,5 +1617,7 @@ Full Changelog: https://github.com/deepseek-ai/deepseek-harness/compare/dsh-v0.1
 
 [0.1.35]: https://github.com/314857493/dsh-desktop/compare/v0.1.34...v0.1.35
 
-[Unreleased]: https://github.com/314857493/dsh-desktop/compare/v0.1.36...HEAD
 [0.1.36]: https://github.com/314857493/dsh-desktop/compare/v0.1.35...v0.1.36
+
+[Unreleased]: https://github.com/314857493/dsh-desktop/compare/v0.1.37...HEAD
+[0.1.37]: https://github.com/314857493/dsh-desktop/compare/v0.1.36...v0.1.37
