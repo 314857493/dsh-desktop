@@ -553,8 +553,11 @@ export async function ensureMarketplace(runtimeDir, dshHome = runtimeHome()) {
   // same reconciliation as an active or temporarily suspended marketplace.
   const needsRegistration = !hasBundle && hasDependency &&
     (suspension !== undefined || markerSchema < MARKETPLACE_SCHEMA_VERSION)
+  const installedSeedBehindCurrent = installedPackage !== undefined &&
+    seedIsNewerThanInstalled(seed, installedPackage) &&
+    (marker?.seededVersion === seed.version || marker?.seededVersion === dependencySpec)
   const shouldUpgrade = installedIsStaleSeed || installedAllowsNewerSeed ||
-    installedIsOlderAndIncompatible
+    installedIsOlderAndIncompatible || installedSeedBehindCurrent
 
   if (needsRegistration) {
     if (shouldUpgrade) {
