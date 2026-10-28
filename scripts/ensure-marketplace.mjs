@@ -275,13 +275,46 @@ function removeOwnedSeedResidue(profileDir) {
   return true
 }
 
+function extractTopLevelItems(yamlSeqStr) {
+  const lines = yamlSeqStr.split(/\r?\n/)
+  const items = []
+  let current = null
+
+  for (const line of lines) {
+    if (/^-\s+/.test(line)) {
+      if (current) items.push(current)
+      current = [line]
+    } else if (current) {
+      current.push(line)
+    } else {
+      if (line.trim() !== '') {
+        items.push([line])
+      }
+    }
+  }
+  if (current) items.push(current)
+  return items.map((l) => l.join('\n'))
+}
+
 function withoutManagedPolicy(content) {
   const start = content.indexOf(MANAGED_POLICY_START)
   if (start === -1) return content
   const end = content.indexOf(MANAGED_POLICY_END, start)
   if (end === -1) return content
-  const after = end + MANAGED_POLICY_END.length
-  return `${content.slice(0, start)}${content.slice(after).replace(/^\r?\n/, '')}`
+
+  const before = content.slice(0, start).trimEnd()
+  const inside = content.slice(start + MANAGED_POLICY_START.length, end).trim()
+  const after = content.slice(end + MANAGED_POLICY_END.length).replace(/^\r?\n/, '').trimEnd()
+
+  // Extract items inside the marker block, filtering out the managed dsh-market policy
+  // while preserving any user settings that were appended into the block by YAML writers.
+  const insideItems = extractTopLevelItems(inside).filter((item) => {
+    return !/^- id:\s*['"]?dsh-market['"]?/.test(item.trim())
+  })
+  const preservedUserItems = insideItems.join('\n').trim()
+
+  const parts = [before, preservedUserItems, after].filter((p) => p !== '')
+  return parts.length === 0 ? '' : `${parts.join('\n')}\n`
 }
 
 function meaningfulLines(content) {
@@ -463,9 +496,10 @@ export async function ensureMarketplace(runtimeDir, dshHome = runtimeHome()) {
   // the new core runtime. Comparing ownership only with the *current* seed
   // made every old desktop seed look user-managed after an app update, which
   // could leave an incompatible plugin in the boot-critical bundle list.
-  const installedIsStaleSeed = ownedSeedVersion !== undefined &&
-    ownedSeedVersion !== seed.version &&
-    dependencySpec === ownedSeedVersion
+  const staleSeedVersion = ownedSeedVersion ?? marker?.seededVersion
+  const installedIsStaleSeed = staleSeedVersion !== undefined &&
+    staleSeedVersion !== seed.version &&
+    dependencySpec === staleSeedVersion
   // A package-manager update replaces the marketplace directory and drops
   // the desktop ownership marker. The dependency range still records what
   // the user authorized, though: when the bundled seed is newer and remains
@@ -593,7 +627,13 @@ export async function ensureMarketplace(runtimeDir, dshHome = runtimeHome()) {
   }
 
   if (profileChanged) writeProfileManifest(profileDir, profile)
-  writePolicyAtomic(profileDir, bundleEnabled, loadOverlayPatches)
+  const policyChanged = writePolicyAtomic(profileDir, bundleEnabled, loadOverlayPatches)
+  if (!profileChanged && !policyChanged && status === 'alreadyInstalled' && marker?.seededVersion === seed.version) {
+    const activeVersion = bundleEnabled && existsSync(activeManifestPath)
+      ? readJson(activeManifestPath).version
+      : profile.dependencies[MARKETPLACE_PACKAGE] ?? seed.version
+    return { status, profileDir, version: activeVersion }
+  }
 
   // Ensure compatibility.json exempts the bundled marketplace version on
   // prerelease / newer DSH runtimes where strict peer checking would reject it.

@@ -711,12 +711,20 @@ fn desktop_context_overlay(plugin: &Path) -> Result<String, String> {
             plugin.display()
         )
     })?;
-    serde_json::to_string_pretty(&serde_json::json!([{
-        "insert": [{
-            "id": "dsh-desktop-context",
-            "name": plugin.as_str(),
-        }],
-    }]))
+    serde_json::to_string_pretty(&serde_json::json!([
+        {
+            "insert": [{
+                "id": "dsh-desktop-context",
+                "name": plugin.as_str(),
+            }],
+        },
+        {
+            "id": "dsh-market",
+            "config": {
+                "allowRestart": false,
+            },
+        }
+    ]))
     .map_err(|error| format!("无法生成桌面运行时上下文配置: {error}"))
 }
 
@@ -1813,6 +1821,8 @@ mod tests {
         let plugin_url = tauri::Url::from_file_path(&plugin).expect("path must become a file URL");
         assert_eq!(overlay[0]["insert"][0]["id"], "dsh-desktop-context");
         assert_eq!(overlay[0]["insert"][0]["name"], plugin_url.as_str());
+        assert_eq!(overlay[1]["id"], "dsh-market");
+        assert_eq!(overlay[1]["config"]["allowRestart"], false);
     }
 
     #[cfg(windows)]

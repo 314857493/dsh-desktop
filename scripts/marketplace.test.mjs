@@ -795,3 +795,45 @@ test('an ownership record cannot replace a different installed version with a br
   assert.equal((await ensureMarketplace(fixture.runtime, fixture.home)).status, 'suspended')
   assert.equal(JSON.parse(readFileSync(join(installed, 'package.json'))).version, '9.9.9')
 })
+
+test('user configuration appended inside managed policy block is preserved across runs', async (t) => {
+  const fixture = createFixture(t)
+  await ensureMarketplace(fixture.runtime, fixture.home)
+
+  // Simulate DSH YAML editor appending a custom provider into cordis.patch.yml,
+  // which due to YAML trailing-comment AST lands inside the managed policy markers
+  const patchPath = join(fixture.profileDir, 'cordis.patch.yml')
+  const originalPatch = readFileSync(patchPath, 'utf8')
+  const modifiedPatch = originalPatch.replace(
+    /# <<< DSH Desktop managed marketplace policy/,
+    `- id: llm-pi-ai\n  config:\n    providers:\n      my_provider:\n        api: openai-completions\n        baseURL: https://api.example.com/v1\n# <<< DSH Desktop managed marketplace policy`,
+  )
+  writeFileSync(patchPath, modifiedPatch)
+
+  // Re-run ensureMarketplace as happens on next desktop boot
+  const nextResult = await ensureMarketplace(fixture.runtime, fixture.home)
+  assert.equal(nextResult.status, 'alreadyInstalled')
+
+  const finalPatch = readFileSync(patchPath, 'utf8')
+  assert.match(finalPatch, /id: llm-pi-ai/)
+  assert.match(finalPatch, /my_provider/)
+  assert.match(finalPatch, /baseURL: https:\/\/api\.example\.com\/v1/)
+  assert.match(finalPatch, /id: dsh-market/)
+  assert.match(finalPatch, /allowRestart: false/)
+})
+
+test('an older seeded version recorded in marker is upgraded when bundled seed updates without ownership file', async (t) => {
+  const fixture = createFixture(t)
+  initializeProfile(fixture.profileDir, { dependencies: { dshmarket: '1.0.0' }, marketplaceBundle: true })
+  writeInstalledMarketplace(fixture.profileDir, '1.0.0')
+  writeJson(join(fixture.profileDir, MARKETPLACE_MARKER), {
+    schemaVersion: MARKETPLACE_SCHEMA_VERSION,
+    package: 'dshmarket',
+    seededVersion: '1.0.0',
+  })
+
+  const result = await ensureMarketplace(fixture.runtime, fixture.home)
+  assert.equal(result.status, 'updated')
+  assert.equal(result.version, SEED_VERSION)
+  assert.equal(profileManifest(fixture.profileDir).dependencies.dshmarket, SEED_VERSION)
+})
