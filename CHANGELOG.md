@@ -8,6 +8,28 @@ DeepSeek Harness 上游版本，以便复现构建和排查兼容性问题。
 
 ## [Unreleased]
 
+## [0.1.39] - 2026-10-28
+
+### 桌面端
+
+- 无桌面壳代码变更；此版本用于同步上游 DeepSeek Harness。
+
+### 内置 DeepSeek Harness
+
+- 版本：`dsh-v0.2.1-rc.3` → `dsh-v0.2.1-rc.4`
+- Commit：`504a01a9578abc2c6f1fb896b1dc322c9fe24f66`
+- [上游 Release Notes](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.2.1-rc.4)
+
+#### 问题修复
+
+- 修复 ACP 模式下诊断输出混入 stdout 的问题。 @LegGasai, @tianyicui
+
+#### Bug Fixes
+
+- Fix diagnostics leaking into stdout in ACP mode. by @LegGasai, @tianyicui
+
+Full Changelog: [dsh-v0.2.1-rc.3...dsh-v0.2.1-rc.4](https://github.com/deepseek-ai/deepseek-harness/compare/dsh-v0.2.1-rc.3...dsh-v0.2.1-rc.4)
+
 ## [0.1.38] - 2026-10-28
 
 ### 修复
@@ -1657,5 +1679,7 @@ Full Changelog: https://github.com/deepseek-ai/deepseek-harness/compare/dsh-v0.1
 
 [0.1.37]: https://github.com/314857493/dsh-desktop/compare/v0.1.36...v0.1.37
 
-[Unreleased]: https://github.com/314857493/dsh-desktop/compare/v0.1.38...HEAD
 [0.1.38]: https://github.com/314857493/dsh-desktop/compare/v0.1.37...v0.1.38
+
+[Unreleased]: https://github.com/314857493/dsh-desktop/compare/v0.1.39...HEAD
+[0.1.39]: https://github.com/314857493/dsh-desktop/compare/v0.1.38...v0.1.39

@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
   "repository": "deepseek-ai/deepseek-harness",
-  "tag": "dsh-v0.2.1-rc.3",
-  "commit": "1f81c047fc48fa190a683e469daa699857e9afe8",
-  "releaseUrl": "https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.2.1-rc.3",
-  "publishedAt": "2026-10-23T15:26:39Z",
-  "desktopVersion": "0.1.38",
+  "tag": "dsh-v0.2.1-rc.4",
+  "commit": "504a01a9578abc2c6f1fb896b1dc322c9fe24f66",
+  "releaseUrl": "https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.2.1-rc.4",
+  "publishedAt": "2026-10-28T02:49:58Z",
+  "desktopVersion": "0.1.39",
   "managed": true
 }
