@@ -408,8 +408,8 @@ export async function ensureMarketplace(runtimeDir, dshHome = runtimeHome()) {
   const appBootUrl = pathToFileURL(
     join(runtimeDir, 'node_modules', '@deepseek-ai', 'dsh-app-boot', 'lib', 'index.js'),
   ).href
+  const appBoot = await import(appBootUrl)
   const {
-    PROFILE_TEMPLATES,
     evaluatePluginCompatibility,
     initProfile,
     loadOverlayPatches,
@@ -417,12 +417,36 @@ export async function ensureMarketplace(runtimeDir, dshHome = runtimeHome()) {
     readProfileManifest,
     resolveProfileDir,
     writeProfileManifest,
-  } = await import(appBootUrl)
+  } = appBoot
+
+  // Upstream DSH >= 0.2.2 moved official profile templates out of app-boot into
+  // @deepseek-ai/dsh-official-bundles. Support both layouts with a safe default.
+  let profileTemplates = appBoot.PROFILE_TEMPLATES
+  if (!profileTemplates) {
+    const officialBundlesPath = join(
+      runtimeDir,
+      'node_modules',
+      '@deepseek-ai',
+      'dsh-official-bundles',
+      'lib',
+      'index.js',
+    )
+    if (existsSync(officialBundlesPath)) {
+      try {
+        const officialBundles = await import(pathToFileURL(officialBundlesPath).href)
+        profileTemplates = officialBundles.PROFILE_TEMPLATES
+      } catch {
+        // Fall back below if loading official bundles fails.
+      }
+    }
+  }
 
   const profileDir = resolveProfileDir('web', dshHome)
   const profileManifestPath = join(profileDir, 'package.json')
   if (!existsSync(profileManifestPath)) {
-    const template = PROFILE_TEMPLATES.web
+    const template = profileTemplates?.web ?? {
+      bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app'],
+    }
     const bundles = Array.isArray(template) ? template : template?.bundles
     if (!Array.isArray(bundles) || !bundles.every((bundle) => typeof bundle === 'string')) {
       throw new Error('runtime web profile template has no valid bundle list')
@@ -432,7 +456,7 @@ export async function ensureMarketplace(runtimeDir, dshHome = runtimeHome()) {
     // initProfile keeps the same positional bundle argument in both APIs;
     // pass the optional policy through so the generated profile matches the
     // selected runtime instead of coupling this migration to either shape.
-    initProfile(profileDir, bundles, Array.isArray(template) ? undefined : template.patchReload)
+    initProfile(profileDir, bundles, Array.isArray(template) ? undefined : template?.patchReload)
   }
 
   const markerPath = join(profileDir, MARKETPLACE_MARKER)

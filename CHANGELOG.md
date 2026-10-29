@@ -8,6 +8,10 @@ DeepSeek Harness 上游版本，以便复现构建和排查兼容性问题。
 
 ## [Unreleased]
 
+### 修复
+
+- 兼容上游 DeepSeek Harness >= 0.2.2 将官方配置模板拆分至 `@deepseek-ai/dsh-official-bundles` 的变更，修复 `ensure-marketplace` 在新上游版本首次初始化 profile 时报错 `TypeError: Cannot read properties of undefined (reading 'web')` 的问题。
+
 ## [0.1.39] - 2026-10-28
 
 ### 桌面端

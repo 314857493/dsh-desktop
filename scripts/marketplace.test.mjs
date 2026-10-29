@@ -28,6 +28,8 @@ function writeJson(path, value) {
 function createFixture(t, {
   structuredProfileTemplate = false,
   seedVersion = SEED_VERSION,
+  templatesInOfficialBundles = false,
+  omitProfileTemplates = false,
 } = {}) {
   const root = mkdtempSync(join(tmpdir(), 'dsh-desktop-marketplace-test-'))
   t.after(() => rmSync(root, { recursive: true, force: true }))
@@ -51,18 +53,31 @@ function createFixture(t, {
   writeFileSync(join(seedPackage, 'seed.txt'), 'bundled seed\n')
   addMarketplaceClient(seedPackage)
 
-  const appBootDir = join(runtime, 'node_modules', '@deepseek-ai', 'dsh-app-boot')
-  writeJson(join(appBootDir, 'package.json'), { type: 'module' })
-  mkdirSync(join(appBootDir, 'lib'), { recursive: true })
   const webProfileTemplate = structuredProfileTemplate
     ? `{ bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app'], patchReload: 'live' }`
     : `['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app']`
-  writeFileSync(join(appBootDir, 'lib', 'index.js'), `
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { basename, join } from 'node:path'
+
+  if (templatesInOfficialBundles) {
+    const officialBundlesDir = join(runtime, 'node_modules', '@deepseek-ai', 'dsh-official-bundles')
+    writeJson(join(officialBundlesDir, 'package.json'), { type: 'module' })
+    mkdirSync(join(officialBundlesDir, 'lib'), { recursive: true })
+    writeFileSync(join(officialBundlesDir, 'lib', 'index.js'), `
 export const PROFILE_TEMPLATES = {
   web: ${webProfileTemplate},
 }
+`)
+  }
+
+  const exportTemplates = !templatesInOfficialBundles && !omitProfileTemplates
+  const appBootDir = join(runtime, 'node_modules', '@deepseek-ai', 'dsh-app-boot')
+  writeJson(join(appBootDir, 'package.json'), { type: 'module' })
+  mkdirSync(join(appBootDir, 'lib'), { recursive: true })
+  writeFileSync(join(appBootDir, 'lib', 'index.js'), `
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { basename, join } from 'node:path'
+${exportTemplates ? `export const PROFILE_TEMPLATES = {
+  web: ${webProfileTemplate},
+}` : ''}
 export function resolveProfileDir(name, home) { return join(home, 'profiles', name) }
 export function initProfile(dir, bundles, patchReload) {
   mkdirSync(dir, { recursive: true })
@@ -836,4 +851,28 @@ test('an older seeded version recorded in marker is upgraded when bundled seed u
   assert.equal(result.status, 'updated')
   assert.equal(result.version, SEED_VERSION)
   assert.equal(profileManifest(fixture.profileDir).dependencies.dshmarket, SEED_VERSION)
+})
+
+test('fresh profile initializes correctly when templates are in @deepseek-ai/dsh-official-bundles', async (t) => {
+  const fixture = createFixture(t, { templatesInOfficialBundles: true })
+  const result = await ensureMarketplace(fixture.runtime, fixture.home)
+  assert.equal(result.status, 'installed')
+  const manifest = profileManifest(fixture.profileDir)
+  assert.deepEqual(manifest.dsh?.profile?.bundles, [
+    '@deepseek-ai/dsh-base',
+    '@deepseek-ai/dsh-web-app',
+    'dshmarket',
+  ])
+})
+
+test('fresh profile falls back to default bundles when profile templates are missing', async (t) => {
+  const fixture = createFixture(t, { omitProfileTemplates: true })
+  const result = await ensureMarketplace(fixture.runtime, fixture.home)
+  assert.equal(result.status, 'installed')
+  const manifest = profileManifest(fixture.profileDir)
+  assert.deepEqual(manifest.dsh?.profile?.bundles, [
+    '@deepseek-ai/dsh-base',
+    '@deepseek-ai/dsh-web-app',
+    'dshmarket',
+  ])
 })
