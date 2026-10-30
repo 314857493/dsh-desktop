@@ -8,9 +8,27 @@ DeepSeek Harness 上游版本，以便复现构建和排查兼容性问题。
 
 ## [Unreleased]
 
+## [0.1.40] - 2026-10-30
+
 ### 修复
 
 - 兼容上游 DeepSeek Harness >= 0.2.2 将官方配置模板拆分至 `@deepseek-ai/dsh-official-bundles` 的变更，修复 `ensure-marketplace` 在新上游版本首次初始化 profile 时报错 `TypeError: Cannot read properties of undefined (reading 'web')` 的问题。
+
+### 内置 DeepSeek Harness
+
+- 版本：`dsh-v0.2.1-rc.4` → `dsh-v0.2.1-rc.5`
+- Commit：`b830ec950faba0a46dda564be3e2d854afed94f1`
+- [上游 Release Notes](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.2.1-rc.5)
+
+#### 体验优化
+
+- 优化对话中思考内容的展示效果。 @LegGasai
+
+#### Improvements
+
+- Improve how thinking content is displayed in conversations. by @LegGasai
+
+Full Changelog: [dsh-v0.2.1-rc.4...dsh-v0.2.1-rc.5](https://github.com/deepseek-ai/deepseek-harness/compare/dsh-v0.2.1-rc.4...dsh-v0.2.1-rc.5)
 
 ## [0.1.39] - 2026-10-28
 
@@ -1685,5 +1703,7 @@ Full Changelog: https://github.com/deepseek-ai/deepseek-harness/compare/dsh-v0.1
 
 [0.1.38]: https://github.com/314857493/dsh-desktop/compare/v0.1.37...v0.1.38
 
-[Unreleased]: https://github.com/314857493/dsh-desktop/compare/v0.1.39...HEAD
 [0.1.39]: https://github.com/314857493/dsh-desktop/compare/v0.1.38...v0.1.39
+
+[Unreleased]: https://github.com/314857493/dsh-desktop/compare/v0.1.40...HEAD
+[0.1.40]: https://github.com/314857493/dsh-desktop/compare/v0.1.39...v0.1.40
