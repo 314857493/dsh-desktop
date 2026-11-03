@@ -8,6 +8,103 @@ DeepSeek Harness 上游版本，以便复现构建和排查兼容性问题。
 
 ## [Unreleased]
 
+## [0.1.42] - 2026-11-03
+
+### 桌面端
+
+- 无桌面壳代码变更；此版本用于同步上游 DeepSeek Harness。
+
+### 内置 DeepSeek Harness
+
+- 版本：`dsh-v0.2.2-alpha.2` → `dsh-v0.2.2-alpha.3`
+- Commit：`05b1cae8db6e674c5685101494d4eec24652424a`
+- [上游 Release Notes](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.2.2-alpha.3)
+
+#### 新增功能
+
+- 支持统一右键与键盘菜单，覆盖会话、工作区和侧边栏，并支持开发者扩展 @std4453
+- 文件预览支持常驻目录树和文件定位功能。 @yudshj
+- 实验性「变更请求与工作树」统一代码审查与工作树入口，支持通过可搜索文件树和逐文件导航查看本地及 PR 差异，将选中代码和评论交给 Agent，并跟踪检查与评审状态。 @LegGasai
+
+#### 体验优化
+
+- 改善手机端侧栏导航与窄屏布局，保持会话标题稳定，并让模型目录输入和插件发现页操作完整可见。 @Stevring @Saafo @EricMoin
+- 菜单和浮窗优先保持在可见区域内，跟随浏览器缩放、平移和软键盘变化。 @Stevring
+- Trajectory 支持独立折叠子调用，保留父调用和摘要；搜索或跨视图定位时可展开对应子调用。 @kermanx
+- 优化对话中思考内容的展示，摘要、展开正文和翻译不再显示模型输出开头的签名前缀。 @LegGasai
+- 减少会话状态更新时的重复发布和目录处理开销，并降低长回复流式组装的运行时成本。 @liukx0205 @imccyu
+- 改善底部输入框的布局稳定性，减少输入、菜单展开和统计更新时的跳动。 @imccyu
+
+#### 问题修复
+
+- 通过 pi-ai 接入的模型在会话图片超过请求数量上限时，自动省略最早的图片并继续请求，避免持续失败。 @turtle2099
+- 修复 OpenCode 路由下自动审核在工具执行前失败的问题，审查请求携带对应会话的身份和用途。 @LegGasai
+- 修复 alpha.2 引入的空会话恢复后被当作「未命名」会话持续显示的问题，并恢复按最后提示时间排序。 @imccyu
+- 修复包含旧版子代理描述的历史会话无法打开，并导致会话搜索失败的问题。 @turtle2099
+- 修复加载更早的已压缩会话历史后，聊天记录停止加载和更新的问题。 @turtle2099
+- 聊天中的 Markdown 文件链接容忍无效行号，并支持行范围及行列后缀；无法定位时仍打开原文件，URL 保持为网页链接。 @kermanx
+- 文本和 Markdown 文件预览在刷新后保留阅读位置，文件暂时变短时也保留原位置，避免跳回第一页。 @yudshj
+- Trajectory 保留失败工具实际返回的文本，列表、详情和复制不再用合成错误信息替换它；原生工具和嵌套 PTC 调用使用相同规则。 @kermanx
+- 修复部分历史 `run_code` 记录的代码页缺少 TypeScript 或 Python 语法高亮的问题。 @kermanx
+
+#### 其他变更
+
+- 同步 Cordis Core 至 4.0.0-rc.11、Loader 至 1.0.0-rc.8、Include 至 1.1.1，统一配置访问、条目变更和持久化行为。 @shigma @imccyu
+- pi-ai 支持插件按会话和请求用途提供动态请求头；无效请求头在请求发出前报错。 @LegGasai
+- 插件可为自己的设置页面提供导航图标，卸载后恢复默认图标。 @Magolor
+- 插件安装失败时显示完整诊断与 Host 日志入口，并区分安装失败和安装后启用失败。 @kermanx
+- 「Git 工作树」入口已合入「变更请求与工作树」，此前启用独立插件的用户需手动从 profile 的 dsh.profile.bundles 中移除 @deepseek-ai/dsh-experimental-tool-worktree
+- 「自动化任务」改为统一的宿主级管理，支持手动创建、直接编辑和通过预填提示在会话中创建，保留编辑草稿并支持冲突复核，可选择复用或新建会话执行任务。 @ZiyaZhang @Magolor
+- 新增默认关闭的 `apply_patch` 工具，一次完成多文件新增、编辑、删除和移动，并在 Review 中查看变更。 @sjw1231 @CreatixChu
+- TypeScript 与 Python SDK 补齐原生命令和插件管理能力，支持计划审阅、目标续跑与操作审批；插件变更重启后生效。 @LogosVeritas @koalazf99
+- macOS Computer Use 改用独立应用申请系统权限，打开对应系统设置并提供应用拖入引导，返回后刷新权限状态。 @CreatixChu
+- 文件修改的先读和外部修改防护默认关闭，沙箱限制和 Review 保持不变；需要原防护的 profile 可显式恢复观察策略。 @sjw1231
+- 回退 alpha.2 中引入的跨行 `$$` 数学块的不稳定兼容解析。 @yudshj
+
+#### New Features
+
+- Unify mouse and keyboard context menus across Sessions, workspaces, and the sidebar, with support for developer extensions. by @std4453
+- Keep a directory tree in file previews and locate the current file. by @yudshj
+- Unify code review and worktree access in the experimental change-request and worktree feature. Browse local and PR diffs through a searchable file tree and per-file navigation, quote selected code and comments to the Agent, and track checks and reviews. by @LegGasai
+
+#### Improvements
+
+- Improve mobile sidebar navigation and narrow-screen layouts, keeping Session titles stable and model-catalog inputs and plugin-discovery controls fully visible. by @Stevring, @Saafo, @EricMoin
+- Keep menus and floating panels within the visible viewport where possible, following browser zooming, panning, and on-screen keyboard changes. by @Stevring
+- Fold Trajectory subcalls independently while keeping their parent calls and summaries visible. Reveal matching subcalls through search or cross-view navigation. by @kermanx
+- Improve reasoning presentation in conversations by hiding leading signature metadata from summaries, expanded content, and translations. by @LegGasai
+- Reduce repeated publications and catalog processing during Session state updates, and lower runtime overhead when assembling streaming replies. by @liukx0205, @imccyu
+- Improve the layout stability of the docked composer, reducing movement during typing, menu expansion, and statistics updates. by @imccyu
+
+#### Bug Fixes
+
+- Continue pi-ai conversations that exceed the request image-count limit by offloading the oldest images, preventing repeated failures. by @turtle2099
+- Fix Auto review failures before tool execution on OpenCode routes by supplying the reviewed Session identity and request purpose. by @LegGasai
+- Fix a regression introduced in alpha.2 that leaves resumed empty Sessions visible as untitled Sessions, and restore sorting by the last prompt time. by @imccyu
+- Restore opening historical Sessions with older subagent descriptors and fix the resulting Session search failures. by @turtle2099
+- Fix chat history loading and live updates getting stuck after loading earlier compacted history. by @turtle2099
+- Accept line ranges and line/column suffixes in Markdown file links, open the file when a location is invalid, and retain URLs as web links. by @kermanx
+- Retain reading position in text and Markdown previews across refreshes and temporary file shortening instead of jumping back to the first page. by @yudshj
+- Preserve the actual text returned by failed tools in Trajectory lists, details, and copied output, including native tools and nested PTC calls. by @kermanx
+- Restore TypeScript and Python syntax highlighting for affected historical `run_code` records. by @kermanx
+- Show the appropriate date, time, interval, and weekday controls when opening existing scheduled tasks, with field-specific correction guidance. Preserve timing rules when only the name or instruction changes, and retain original text for complex rules or values beyond control precision. by @Magolor
+
+#### Chores
+
+- Update Cordis Core to 4.0.0-rc.11, Loader to 1.0.0-rc.8, and Include to 1.1.1, unifying configuration access, entry changes, and persistence behavior. by @shigma, @imccyu
+- Allow plugins to supply dynamic pi-ai headers using Session identity and request purpose, rejecting invalid headers before dispatch. by @LegGasai
+- Allow plugins to supply navigation icons for their settings pages, restoring the default icon when unloaded. by @Magolor
+- Show complete diagnostics and the Host log location for plugin failures, distinguishing installation failures from subsequent activation failures. by @kermanx
+- The Git worktree entry is now included in change requests and worktrees. Users who enabled the standalone plugin must manually remove @deepseek-ai/dsh-experimental-tool-worktree from dsh.profile.bundles in their profile.
+- Unify scheduled-task management across the Host with manual creation, direct editing, and prefilled prompts for creation in a Session. Retain drafts, support conflict review, and run tasks in reusable or new Sessions. by @ZiyaZhang, @Magolor
+- Add `apply_patch`, disabled by default, to create, edit, delete, and move multiple files in one call, with changes available in Review. by @sjw1231, @CreatixChu
+- Extend the TypeScript and Python SDKs with native commands and plugin management, supporting plan review, goal continuation, and operation approvals. Restart the SDK to apply plugin changes. by @LogosVeritas, @koalazf99
+- Request macOS Computer Use permissions through a standalone app, opening the relevant system settings with drag-in guidance and refreshing permission status upon return. by @CreatixChu
+- Disable read-before-write and external-change checks by default while retaining sandbox limits and Review. Profiles requiring the previous checks can explicitly restore the observation policy. by @sjw1231
+- Revert the unstable compatibility parsing for multiline `$$` display math introduced in alpha.2. by @yudshj
+
+Full Changelog: https://github.com/deepseek-ai/deepseek-harness/compare/dsh-v0.2.2-alpha.2...dsh-v0.2.2-alpha.3
+
 ## [0.1.41] - 2026-10-31
 
 ### 桌面端
@@ -1977,5 +2074,7 @@ Full Changelog: https://github.com/deepseek-ai/deepseek-harness/compare/dsh-v0.1
 
 [0.1.40]: https://github.com/314857493/dsh-desktop/compare/v0.1.39...v0.1.40
 
-[Unreleased]: https://github.com/314857493/dsh-desktop/compare/v0.1.41...HEAD
 [0.1.41]: https://github.com/314857493/dsh-desktop/compare/v0.1.40...v0.1.41
+
+[Unreleased]: https://github.com/314857493/dsh-desktop/compare/v0.1.42...HEAD
+[0.1.42]: https://github.com/314857493/dsh-desktop/compare/v0.1.41...v0.1.42

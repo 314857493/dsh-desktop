@@ -841,7 +841,7 @@ dependencies = [
 
 [[package]]
 name = "dsh-desktop"
-version = "0.1.41"
+version = "0.1.42"
 dependencies = [
  "cookie",
  "reqwest",
