@@ -8,6 +8,300 @@ DeepSeek Harness 上游版本，以便复现构建和排查兼容性问题。
 
 ## [Unreleased]
 
+## [0.1.43] - 2026-11-05
+
+### 桌面端
+
+- 无桌面壳代码变更；此版本用于同步上游 DeepSeek Harness。
+
+### 内置 DeepSeek Harness
+
+- 版本：`dsh-v0.2.2-alpha.3` → `dsh-v0.2.2-rc.1`
+- Commit：`66491b05e3f05ad35bcdd4f6cd7ed26041d9e3db`
+- [上游 Release Notes](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.2.2-rc.1)
+
+作为 0.2.2 系列的首个候选版本，本版本汇总了自 v0.2.1-rc.5 以来的主要用户和开发者相关变更。
+
+#### 新增功能
+
+- 完善手机和平板适配，优化软键盘交互、导航与窄屏布局，保持菜单和操作入口可用。 @Stevring, @turtle2099, @LegGasai, @EricMoin, @Saafo
+- 支持将聊天文本作为引用插入输入框，并在发送后显示紧凑预览。 @lsdsjy, @imccyu
+- 支持将完整历史会话复制为 Markdown，包含可用的原始日志路径。 @tianyicui
+- 工作步骤收起后保留全部助手文字回复，可切换为仅最终回答。 @imccyu
+- 支持统一右键与键盘菜单，覆盖会话、工作区和侧边栏，并支持开发者扩展。 @std4453
+- 文件预览支持常驻目录树和文件定位功能。 @yudshj
+- 新增日语、西班牙语、法语、德语、俄语和巴西葡萄牙语文案与界面配置。 @07akioni
+- 插件管理页支持展示富文本详情，并改善页面布局和导航行为。 @turtle1999, @turtle2099
+- 插件管理支持更新第三方插件包；热更新失败时会尝试恢复旧版本。 @turtle1999, @turtle2099
+- 新增实验性「`subagent_oar`工具」插件，可将独立任务交给本机 Codex 或 Claude CLI。 @tianyicui
+- 新增实验性「个性化推荐」插件，按需在回答下方提供官方插件启用卡片或个性化页面创建卡片。 @ZiyaZhang
+- 新增实验性「开发者工具 - 统计」插件，按轮次和步骤查看上下文、缓存、模型与工具耗时等统计。 @mektpoy
+- 新增实验性「变更请求与工作树」：在独立 Git 工作树中运行会话，通过可搜索文件树和逐文件导航查看本地及 PR 差异，将选中代码和评论交给 Agent，并跟踪检查与评审状态。 @LegGasai, @tianyicui
+
+#### 体验优化
+
+- 同名工作区在选择器中显示最短区分路径后缀，窄屏优先保留后缀。 @turtle2099
+- 会话列表支持插件图标，并改善键盘与触屏操作。 @LegGasai
+- 侧栏会话悬浮卡显示工作目录，便于区分未分组或同名会话。 @turtle2099
+- 优化侧栏空间布局，改善响应区域，平滑搜索框展开与收起。 @Yifffan
+- 侧栏搜索支持不区分大小写的会话 ID 子串匹配。 @turtle2099
+- 悬浮侧栏面板拖过屏幕边缘时有阻力，松手后弹回可见区域；窗口缩小时保持控件可达。 @yudshj
+- 支持中键关闭右侧栏标签，关闭后台标签不改变当前选中项，并保留不可关闭的起始页。 @Kingwl
+- 消息在宿主确认接收后才显示并清空草稿；发送期间输入框只读，发送失败时保留草稿、引用和附件。 @LegGasai
+- 图片上传方式调整为进入输入框后立即上传，发送消息时复用已上传的图片。默认单张图片上限提高到 50 MiB。 @LegGasai
+- 已回答的问题批次以消息气泡显示，原生与 PTC 调用的回答在过程折叠后仍可回看。 @Kaige-Gao
+- 运行状态位于当前工作轮次尾部、待处理插话之前，方便区分运行中和排队中的消息，并改善界面布局抖动问题。 @imccyu
+- 改善工作步骤展开／收起和底部输入框的布局稳定性，减少正文、滚动与输入交互时的跳动，并保持运行状态可见。 @imccyu
+- 输入框统计读数被截断时，可通过提示气泡查看完整数值；会话统计也显示轮次与步骤数。 @turtle2099
+- 点击聊天中的文件行号链接后，代码和文本预览以短暂高亮标出目标行并淡出。 @turtle2099
+- 支持拖动平移超出视口的图片，并通过应用内拖放或桌面原生拖放交付原始文件。 @std4453
+- Trajectory 结果页新增实时工具返回值的原始 JSON 查看，并与渲染结果上下展示。 @kermanx
+- Trajectory 支持独立折叠子调用，保留父调用和摘要；搜索或跨视图定位时可展开对应子调用。 @kermanx
+- 模型选择器默认勾选已配置模型，可一次添加或移除候选并保留自定义值；筛选后的全选只作用于可见候选。 @turtle2099
+- 对通过 pi-ai 接入且不支持在对话中追加系统消息的模型，后续系统消息会在原位置作为提醒提供，不会移到最初的提示词中。 @Tuyixiang
+- 支持在 DeepSeek 与 pi-ai 提供商内拖动或用方向键排序模型，保存后保留顺序及完整模型参数。 @Magolor
+- 自动化任务页支持确认后一次清除全部已结束任务，保留进行中的任务。 @Chinesezjc
+- Search 功能优先向模型提供 Search API 长摘要，默认每来源最多 800 字符；搜索卡片仍展示短摘录。 @yudshj
+- Auto 自动审核支持在连续工具调用之间更好地复用历史上下文缓存，减少重复处理。 @turtle2099
+- 后台任务完成通知直接携带小体积输出，并减少已读取结果和子代理收尾消息的重复通知。 @turtle1999
+- 子代理等待指引减少 sleep 和重复轮询：只有结果尚未返回时，结束当前轮次等待完成通知。 @Chinesezjc
+- 加快带固定目录前缀的文件查找，跳过无关目录，同时保持结果与排序规则不变。 @kermanx
+- Word 常规编辑在保存并核对内容与格式后即可交付，减少不必要的 ZIP、XML 与元数据检查。 @tianyicui
+- 远程连接默认启用 WebSocket 压缩，减少大量历史消息的传输量；可通过 `websocketCompression` 关闭。 @imccyu
+- Web 静态资源支持 ETag 条件请求，未变化的资源返回 304，减少重复下载。 @imccyu
+- 减少会话状态更新时的重复发布和目录处理开销，并降低长回复流式组装的运行时成本。 @liukx0205, @imccyu
+- 改善 macOS Computer Use 的系统与应用权限引导，通过独立应用申请系统权限，提供系统设置与应用拖入引导并在返回后刷新状态；支持长按、改善应用启动，应用授权可跨重启保留。 @CreatixChu, @koalazf99
+
+#### 问题修复
+
+- 全局与项目 AGENTS.md 分别使用 maxBytes 预算，避免项目指令挤掉全局指令；同时包含两条链的消息总量最多为原配置的两倍。 @ZiyaZhang
+- 切换到较小上下文模型前先用原模型压缩历史；失败时停止切换请求并保留原请求头。 @Dudu-0223
+- 使用 Gemini 的 OpenAI 兼容 Chat Completions 接口时，工具调用会保留并在后续请求中带回所需的思考签名，避免因签名缺失导致请求拒绝。 @turtle2099
+- 系统提示词未变化时，新一轮模型请求可继续复用已有上下文前缀缓存，避免不必要的缓存失效。 @mektpoy
+- 通过 pi-ai 接入的模型在会话图片超过请求数量上限时，自动省略最早的图片并继续请求，避免持续失败。 @turtle2099
+- 缺少所需凭据时不向模型提供 Web 搜索工具；新版 Web API 的抓取工具也按凭据就绪状态提供。 @LegGasai
+- 修复关闭应用时 Auto 会话权限意外变成完全访问的问题，保留已保存的权限与审批策略。 @tianyicui
+- 修复 OpenCode 路由下自动审核在工具执行前失败的问题，审查请求携带对应会话的身份和用途。 @LegGasai
+- 等待后台任务输出时，用户插话可立即解除等待并返回当前输出，后台任务继续运行。 @mektpoy
+- 修复预设往返切换后委派工具暂时缺失的问题，并让委派工具遵循当前 Agent 的工具限制。 @Dudu-0223
+- 被阻塞的目标可从 Web 目标栏继续；已耗尽轮次上限时仍需先提高上限。 @turtle2099
+- 修复多选问题有多个推荐选项时只预选第一项的问题，现在卡片打开时预选全部推荐项；单选和已回答卡片的行为保持不变。 @yudshj
+- 审批提示明确说明是否向用户请求授权，避免模型误解 never 策略。 @turtle2099
+- 修复 macOS 持久 Bash 工具中感叹号被历史展开改写或导致命令超时的问题。 @grllll
+- 明确告知模型：用户跳过提问后应继续，不重复追问，也不能把跳过当作授权。 @turtle2099
+- 修复一个技能根目录读取失败导致其他目录中的技能也不可用的问题，保留可用技能并提示不完整的发现结果。 @Dudu-0223
+- Web Fetch 可读取编码声明混含 UTF-8 的可读页面。 @Dudu-0223
+- 修复工具调用因无歧义的可选参数而失败的问题：grep 接受空 include。 @turtle1999
+- 长问题和选项说明可原地展开与收起，内容区滚动时导航与提交按钮保持可见。 @yudshj
+- `sdk-minimal` 配置在请求模型或执行工具前保存会话恢复记录；保存失败时不会继续相关操作，提高短会话中断后的可恢复性。 @LogosVeritas
+- 断线或重连期间暂停聊天运行计时，连接恢复后按轮次起点恢复显示。 @turtle2099
+- 停止后补发的插话与新消息在轨迹中按日志顺序显示于助手输出之前，刷新和历史加载后仍保持一致。 @kermanx
+- 普通会话分支现在独立运行，不再被误识别为子智能体；真正子智能体仍保留创建者关系。 @Dudu-0223
+- 修复包含旧版子代理描述的历史会话无法打开，并导致会话搜索失败的问题。 @turtle2099
+- 修复加载更早的已压缩会话历史后，聊天记录停止加载和更新的问题。 @turtle2099
+- 本地文件工具将开头的 ~ 或 ~/ 正确展开为宿主主目录，路径中间的 ~ 保持字面含义。 @turtle2099
+- 聊天中的相对文件链接按点击时会话当前工作目录打开，进入 worktree 后不再误开原项目文件。 @turtle2099
+- Markdown 中单个 ~ 保持字面显示，只有 ~~ 才形成删除线。 @turtle2099
+- 本地 Markdown 图片被覆盖后，新消息和新打开的预览会显示当前文件，而不是复用旧图。 @turtle2099
+- 修复裸 URL 将后续中文标点及正文一并识别为链接的问题。 @turtle2099
+- 修复 Markdown 中 Windows 文件路径的反斜杠被转义删除，导致链接或图片打开错误位置的问题。 @turtle2099
+- 交付卡与收尾回复中的文件引用覆盖整轮，包括回复之后的交付与写入；present 说明等待用户回答前应先提供文件链接。 @yudshj
+- 修复部分结构体代码高亮导致页面长时间卡死的问题。 @yudshj
+- 修复输入框粘贴文件或文件夹路径时仅高亮目录前缀的问题。 @turtle2099
+- 切换、打开或关闭侧栏文件标签时，标签栏从原滚动位置继续，不再先跳回最左端。 @turtle2099
+- 侧栏原生拖动使用独立主题背景预览，避免混入后方消息内容并保留排序。 @Stevring
+- 深色主题设置导航的悬停背景可见，选中态保持优先。 @turtle2099
+- 聊天中的 Markdown 文件链接容忍无效行号，并支持行范围及行列后缀；无法定位时仍打开原文件，URL 保持为网页链接。 @kermanx
+- 文本和 Markdown 文件预览在刷新后保留阅读位置，文件暂时变短时也保留原位置，避免跳回第一页。 @yudshj
+- Trajectory 保留失败工具实际返回的文本，列表、详情和复制不再用合成错误信息替换它；原生工具和嵌套 PTC 调用使用相同规则。 @kermanx
+- 修复部分历史 `run_code` 记录的代码页缺少 TypeScript 或 Python 语法高亮的问题。 @kermanx
+- 安装自托管 Git 插件时，HTTPS 无法读取而 SSH 可用时改用 SSH。 @turtle2099
+- 安装含 prepare 脚本的 Git 插件时，显示脚本授权和重试选项，不再仅报告未知错误。 @turtle2099
+- 配置项目按自身 ESM 规则解析插件依赖子路径、包内导入和自引用。 @shigma
+- 修复 macOS 激活窗口时点击会话标题误触发重命名，正常双击重命名保持不变。 @turtle2099
+- 修复以管理员权限运行 DSH 或在 Windows Sandbox 中使用时，受限沙箱命令无法启动的问题；文件写入和删除限制保持不变。 @huoyaoyuan
+- Windows 已安装应用显示正确的发布者名称，卸载列表中的应用名称不再附带版本号。 @winewill
+- 改善 Windows 安装器进度页绘制、拖动与窗口激活表现，恢复系统最小化动画，并让标题按钮在原区域松开时触发。 @winewill
+- 桌面 Host 完成任务清理并确认关闭后立即退出，避免遗留事件循环句柄阻塞更新安装。 @turtle2099
+- macOS 桌面更新在确认前等待退出全屏，安装失败后恢复工作区；退出全屏超时则保留任务并提示重试。 @winewill
+- 桌面更新提示改为窗内视图，后台结果更新不再抬升原生子窗口；更新提示随应用浅色或暗色主题显示。 @winewill
+- 修复 macOS 桌面端会话头部菜单与按钮之间出现过大空隙的问题。 @turtle2099
+- 修复 macOS 原生目录选择框初次显示后灰显、目录无法点击的问题。 @EricMoin
+
+#### 其他变更
+
+- 同步 Cordis Core 至 4.1.0、Loader 至 1.1.0、Include 至 1.1.0，统一配置访问、条目变更和持久化行为。 @shigma, @imccyu
+- Cordis Fiber 提供统一的原始配置、候选配置解析和生效配置访问，设置编辑与热更新使用一致的配置来源。 @shigma
+- DSH 的最低 Node.js 版本提高至 24.9；使用旧版 Node.js 的用户需先升级运行时。 @tianyicui
+- 升级 pi-ai 至 1.3.0，并同步模型目录、端点与推理回放规则；完整工具参数格式错误会在执行任何工具前终止该次响应。 @tianyicui
+- 未声明容量的自定义模型默认上下文与最大输出调整为十进制 1M/128K；较小端点应显式覆盖容量以避免延迟压缩。 @LegGasai
+- Agent 在提示词组装与 pre-step 前固定本步模型，重试保留同一选择；插件应通过 agent.model 选择模型，agent/request 不再允许改路由。 @kermanx
+- pi-ai 支持插件按会话和请求用途提供动态请求头；无效请求头在请求发出前报错。 @LegGasai
+- TypeScript 与 Python SDK 补齐与 Web 模式一致的文件交付、问答与回调、调度、技能和上下文能力，并支持原生命令、插件管理、计划审阅、目标续跑及操作审批；插件变更需重启 SDK 生效。 @koalazf99, @LogosVeritas
+- 「自动化任务」改为统一的宿主级管理，支持手动创建、直接编辑和通过预填提示在会话中创建，保留编辑草稿并支持冲突复核，可选择复用或新建会话执行任务。 @ZiyaZhang, @Magolor
+- 「Git 工作树」入口已合入「变更请求与工作树」，此前启用独立插件的用户需手动从 profile 的 dsh.profile.bundles 中移除 @deepseek-ai/dsh-experimental-tool-worktree。 @LegGasai
+- Ralph 循环与会话搜索不再显示在实验性列表。 @ZiyaZhang
+- 新增默认关闭的 `apply_patch` 工具，一次完成多文件新增、编辑、删除和移动，并在 Review 中查看变更。 @sjw1231, @CreatixChu
+- 文件修改的先读和外部修改防护默认关闭，沙箱限制和 Review 保持不变；需要原防护的 profile 可显式恢复观察策略。 @sjw1231
+- 工具可按步骤条件启用，模型声明、PTC 绑定与执行准入保持一致；插件需迁移 tools.resolve/executable 与提示词组装接口。 @LegGasai
+- Node PTC 新增 VM Script 模式，支持顶层 await、动态导入和表达式结果，可独立开启跨调用状态保留；默认仍逐次执行，脚本顶层不支持 return 或 using。 @kermanx
+- 原生与 PTC 工具执行拆为按 Agent 作用域选择的插件；PTC 通过配置 overlay 启用，旧 tools.mode 与 DSH_TOOLS_MODE 需迁移。 @kermanx
+- PTC Node 控制通道改用 birpc；自部署 bootstrap 与 SSH helper 必须同步升级，SSH 协议从 2 升为 3。 @kermanx
+- PTC Mode 中由调用方取消的 run_code 改为返回 ABORTED，而非 CODE_RUN_FAILED；SDK 和 Session 消费方需更新取消分类。 @kermanx
+- Web Fetch 不再拒绝非公网地址，可用于代理与内网，部署应自行限制网络访问。 @turtle2099
+- Headless 支持实验性 Auto 自动审核。 @tianyicui
+- 桌面启动故障可获取诊断报告，并附上有界的近期插件操作记录，便于排查问题。 @winewill
+- Session API 新增独立接口，可分别读取快照和持续订阅会话事件日志、运行状态以及事件投影数据。 @imccyu
+- 修复会话创建、恢复和销毁期间的事件发布与清理顺序；初始化事件可实时订阅，取消时等待已取得资源完成清理。 @kermanx
+- Session Projection 注册 API 调整为异步，需要插件启动时持有。 @kermanx, @Magolor
+- 整单元 JSON 与 SQLite 存储支持读取领域明确声明的兼容旧版本，并以新版本格式写入。 @Magolor
+- 「自定义插件市场」更名为「自定义插件索引」，发现页读取用户添加的索引文件，索引生成器排除标记为 private 的版本、标签与默认分支包。 @turtle2099, @turtle1999
+- 官方组合包列表改由 @deepseek-ai/dsh-official-bundles 导出；自定义集成需更新原 app-boot 的相关导入。 @turtle2099
+- 插件可为自己的设置页面提供导航图标，卸载后恢复默认图标。 @Magolor
+- 插件安装失败时显示完整诊断与 Host 日志入口，并区分安装失败和安装后启用失败。 @kermanx
+
+This first release candidate for 0.2.2 summarizes the major user- and developer-facing changes since v0.2.1-rc.5.
+
+#### New Features
+
+- Improve phone and tablet support with better on-screen keyboard interaction, navigation, and narrow layouts, keeping menus and actions accessible. by @Stevring, @turtle2099, @LegGasai, @EricMoin, @Saafo
+- Insert chat text as quotes in the composer and show compact previews after sending. by @lsdsjy, @imccyu
+- Copy the complete conversation history as Markdown, including the original log path when available. by @tianyicui
+- Keep all assistant text replies visible when work steps are collapsed, with an option to show only the final answer. by @imccyu
+- Unify mouse and keyboard context menus across Sessions, workspaces, and the sidebar, with support for developer extensions. by @std4453
+- Keep a directory tree in file previews and locate the current file. by @yudshj
+- Add Japanese, Spanish, French, German, Russian, and Brazilian Portuguese interface text and locale configuration. by @07akioni
+- Show rich-text plugin details in the plugin manager and improve page layout and navigation. by @turtle1999, @turtle2099
+- Support updating third-party plugin packages and attempt to restore the previous version if hot updates fail. by @turtle1999, @turtle2099
+- Add the experimental `subagent_oar` tool plugin to delegate independent tasks to local Codex or Claude CLIs. by @tianyicui
+- Add experimental Personalized recommendations, offering official-plugin activation or personalized-page creation cards below answers when relevant. by @ZiyaZhang
+- Add experimental Developer tools — Statistics for per-turn and per-step context, cache, model, and tool measurements. by @mektpoy
+- Add experimental Change requests and worktrees to run Sessions in separate Git worktrees, browse local and PR diffs through a searchable file tree and per-file navigation, quote selected code and comments to the Agent, and track checks and reviews. by @LegGasai, @tianyicui
+
+#### Improvements
+
+- Distinguish same-named Workspaces with their shortest unique path suffix and prioritize that suffix on narrow screens. by @turtle2099
+- Support plugin icons in the Session list and improve keyboard and touch interaction. by @LegGasai
+- Show working directories on sidebar Session hover cards to distinguish ungrouped or similarly named Sessions. by @turtle2099
+- Improve sidebar spacing and click targets, with smoother search-field expansion and collapse. by @Yifffan
+- Find Sessions by case-insensitive ID substrings in sidebar search. by @turtle2099
+- Add resistance and spring-back when floating sidebar panels are dragged beyond screen edges, and keep their controls reachable when the window shrinks. by @yudshj
+- Close right-sidebar tabs with the middle mouse button without selecting background tabs, while preserving the protected start tab. by @Kingwl
+- Show messages and clear drafts only after the host accepts them. Keep the composer read-only while sending and preserve drafts, quotes, and attachments on failure. by @LegGasai
+- Upload images as soon as they enter the composer and reuse the uploaded images when sending messages. Raise the default per-image limit to 50 MiB. by @LegGasai
+- Show answered question batches as message bubbles so answers from native and PTC calls remain visible after work steps collapse. by @Kaige-Gao
+- Place running status at the active turn tail before queued steering messages, distinguishing active and pending input and reducing layout jitter. by @imccyu
+- Improve layout stability when expanding or collapsing work steps and interacting with the docked composer. Reduce content and scroll jumps while keeping running status visible. by @imccyu
+- Show full truncated composer statistics in tooltips and include turn and step counts in Session statistics. by @turtle2099
+- Briefly highlight and fade the target line in code and text previews after opening a file-line link from chat. by @turtle2099
+- Pan images that exceed the viewport and transfer original files through in-app drag-and-drop or native desktop dragging. by @std4453
+- Add raw JSON views of live tool results to Trajectory, displayed above rendered results. by @kermanx
+- Fold Trajectory subcalls independently while keeping their parent calls and summaries visible. Reveal matching subcalls through search or cross-view navigation. by @kermanx
+- Start the model picker with configured models selected, add or remove candidates while preserving custom values, and apply select-all only to visible candidates. by @turtle2099
+- For models accessed through pi-ai that cannot accept additional system messages during a conversation, keep later system messages in place as reminders rather than moving them into the initial prompt. by @Tuyixiang
+- Reorder models within DeepSeek and pi-ai providers by dragging or using arrow keys, preserving order and complete model parameters when saved. by @Magolor
+- Clear all inactive automation tasks in one confirmed action while keeping active tasks. by @Chinesezjc
+- Search prioritizes long Search API summaries for models, capped at 800 characters per source by default, while search cards retain short snippets. by @yudshj
+- Improve history-context cache reuse across consecutive tool calls in Auto review to reduce repeated processing. by @turtle2099
+- Background-job completion notices include small outputs and reduce duplicate notifications for already-read results and subagent closing messages. by @turtle1999
+- Reduce sleeping and repeated polling in subagent guidance: end the current turn when only a result remains pending and wait for its completion notification. by @Chinesezjc
+- Speed up file searches with literal directory prefixes by skipping unrelated directories while preserving results and ordering. by @kermanx
+- Deliver ordinary Word edits after saving and checking content and formatting, without unnecessary ZIP, XML, or metadata inspection. by @tianyicui
+- Enable WebSocket compression for remote connections by default to reduce transfers of large message histories; disable it with `websocketCompression`. by @imccyu
+- Web static assets support ETag revalidation, returning 304 for unchanged files to avoid repeated downloads. by @imccyu
+- Reduce repeated publications and catalog processing during Session state updates, and lower runtime overhead when assembling streaming replies. by @liukx0205, @imccyu
+- Improve system and application permission onboarding for macOS Computer Use. Request system permissions through a standalone app with system-settings and drag-in guidance, and refresh permission status on return. Support long clicks, improve application launching, and retain application permissions across restarts. by @CreatixChu, @koalazf99
+
+#### Bug Fixes
+
+- Budget global and project AGENTS.md chains separately so project instructions do not evict global guidance; messages containing both chains can use up to twice maxBytes. by @ZiyaZhang
+- Compact history with the previous model before switching to a smaller context window; stop the switch request and preserve its previous header if compaction fails. by @Dudu-0223
+- Preserve the required thought signatures in Gemini tool calls over OpenAI-compatible Chat Completions and include them in subsequent requests to prevent rejection caused by missing signatures. by @turtle2099
+- Reuse existing context-prefix caches for new model requests when the system prompt is unchanged, avoiding unnecessary cache invalidation. by @mektpoy
+- Continue pi-ai conversations that exceed the request image-count limit by offloading the oldest images, preventing repeated failures. by @turtle2099
+- Hide Web search tools when required credentials are missing; fetch tools using the newer Web API also follow credential readiness. by @LegGasai
+- Preserve saved Auto permission and approval policy during application shutdown instead of unintentionally switching to Full access. by @tianyicui
+- Fix Auto review failures before tool execution on OpenCode routes by supplying the reviewed Session identity and request purpose. by @LegGasai
+- User steering now releases a background-output wait immediately and returns current output without stopping the job. by @mektpoy
+- Fix delegation tools being temporarily unavailable after preset round trips and apply the current Agent’s tool restrictions to delegation. by @Dudu-0223
+- Resume blocked goals from the Web goal bar; goals that have exhausted their round limit still require a higher limit first. by @turtle2099
+- Preselect every recommended option in multiple-choice questions instead of only the first, while preserving single-choice and answered-card behavior. by @yudshj
+- Approval messages explicitly state whether user approval is requested, avoiding ambiguity around the never policy. by @turtle2099
+- Prevent history expansion from rewriting exclamation marks or causing persistent Bash command timeouts on macOS. by @grllll
+- Tell the model to continue after a skipped question without asking it again or treating the skip as permission. by @turtle2099
+- Keep skills from healthy roots available when another skill root cannot be read, and report incomplete discovery. by @Dudu-0223
+- Allow Web Fetch to read valid UTF-8 pages whose encoding declarations contain multiple labels including UTF-8. by @Dudu-0223
+- Fix tool calls failing on unambiguous optional arguments by accepting an empty grep include. by @turtle1999
+- Expand and collapse long questions and option descriptions in place, with navigation and submission controls kept visible. by @yudshj
+- Save Session recovery records before model requests and tool execution in `sdk-minimal`. Stop related operations if saving fails to improve recovery after short Sessions are interrupted. by @LogosVeritas
+- Pause the chat running clock during disconnection or reconnection and resume elapsed-time display after reconnecting. by @turtle2099
+- Keep retained steering and follow-up input in log order before assistant output in Trajectory, including after refresh and history loading. by @kermanx
+- Run ordinary conversation forks independently instead of treating them as subagents, while preserving creator relationships for real subagents. by @Dudu-0223
+- Restore opening historical Sessions with older subagent descriptors and fix the resulting Session search failures. by @turtle2099
+- Fix chat history loading and live updates getting stuck after loading earlier compacted history. by @turtle2099
+- Expand leading ~ or ~/ in local file tools to the Host home directory while preserving literal tildes elsewhere in paths. by @turtle2099
+- Resolve relative chat file links from the Session working directory at click time so worktree Sessions do not open the original checkout. by @turtle2099
+- Keep single tildes literal in Markdown and require double tildes for strikethrough. by @turtle2099
+- Show the current local Markdown image in newly rendered messages and previews after the file is overwritten. by @turtle2099
+- Fix bare URLs incorrectly including following Chinese punctuation and text in links. by @turtle2099
+- Preserve backslash separators in Windows-path Markdown links and images so they resolve to the intended location. by @turtle2099
+- Include whole-turn deliveries and writes in deliverable cards and closing-reply file links, even after the reply; present guidance tells agents to link files before waiting for user input. by @yudshj
+- Fix prolonged page freezes caused by syntax highlighting of certain struct definitions. by @yudshj
+- Fix pasted file and folder paths being highlighted only through their directory prefixes in the composer. by @turtle2099
+- Preserve the sidebar file-tab strip's scroll position when selecting, opening, or closing tabs instead of restarting from the left edge. by @turtle2099
+- Use isolated, theme-backed sidebar drag previews to avoid capturing content behind rows while preserving native reordering. by @Stevring
+- Make settings-navigation hover visible in dark mode while retaining selected-state priority. by @turtle2099
+- Accept line ranges and line/column suffixes in Markdown file links, open the file when a location is invalid, and retain URLs as web links. by @kermanx
+- Retain reading position in text and Markdown previews across refreshes and temporary file shortening instead of jumping back to the first page. by @yudshj
+- Preserve the actual text returned by failed tools in Trajectory lists, details, and copied output, including native tools and nested PTC calls. by @kermanx
+- Restore TypeScript and Python syntax highlighting for affected historical `run_code` records. by @kermanx
+- Use SSH for self-hosted Git plugin installation when HTTPS is unreadable and SSH is available. by @turtle2099
+- Offer script approval and retry when installing Git plugins with prepare scripts instead of reporting only an unknown error. by @turtle2099
+- Resolve configuration-project plugins using the project’s ESM rules for dependency subpaths, package imports, and self-references. by @shigma
+- Prevent a window-activating click on a Session title from accidentally opening rename on macOS, while preserving normal double-click rename. by @turtle2099
+- Fix restricted sandbox commands failing to start when DSH runs as administrator or in Windows Sandbox, while preserving file-write and deletion restrictions. by @huoyaoyuan
+- Correct the Windows installed-app publisher and keep the application name separate from its version in uninstall listings. by @winewill
+- Improve Windows installer progress rendering, dragging, and activation, restore native minimize transitions, and trigger caption buttons on release inside the original button. by @winewill
+- Exit the Desktop Host immediately after acknowledging completed teardown so leftover event-loop handles do not block update installation. by @turtle2099
+- Leave macOS fullscreen before Desktop update confirmation so failed installs recover the workspace; preserve tasks and show retry guidance if fullscreen exit times out. by @winewill
+- Show desktop update prompts in-window without raising native child windows for background results, and match prompts to the app’s light or dark theme. by @winewill
+- Keep conversation header menus close to their trigger buttons on macOS desktop. by @turtle2099
+- Fix the native macOS directory picker initially appearing inactive and ignoring directory clicks. by @EricMoin
+
+#### Chores
+
+- Update to Cordis Core 4.1.0, Loader 1.1.0, and Include 1.1.0, unifying configuration access, entry changes, and persistence behavior. by @shigma, @imccyu
+- Provide unified Cordis Fiber access to raw configuration, candidate resolution, and effective configuration, used consistently by settings and hot reload. by @shigma
+- Raise the minimum supported Node.js version to 24.9. Upgrade older Node.js runtimes before upgrading DSH. by @tianyicui
+- Upgrade pi-ai to 1.3.0 with updated model catalogs, endpoints, and reasoning replay rules; malformed completed tool arguments fail the response before any tool executes. by @tianyicui
+- Default undeclared custom-model capacities to decimal 1M context and 128K output; smaller endpoints should set explicit capacities to avoid delayed compaction. by @LegGasai
+- Capture the step model before prompt assembly and pre-step and retain it through retries; plugins should select through agent.model rather than changing routes in agent/request. by @kermanx
+- Allow plugins to supply dynamic pi-ai headers using Session identity and request purpose, rejecting invalid headers before dispatch. by @LegGasai
+- Bring the TypeScript and Python SDKs in line with Web mode for file delivery, questions and callbacks, scheduling, skills, and context. Support native commands, plugin management, plan review, goal continuation, and operation approvals; restart the SDK to apply plugin changes. by @koalazf99, @LogosVeritas
+- Unify scheduled-task management across the Host with manual creation, direct editing, and prefilled prompts for creation in a Session. Retain drafts, support conflict review, and run tasks in reusable or new Sessions. by @ZiyaZhang, @Magolor
+- The Git worktree entry is included in Change requests and worktrees. Remove @deepseek-ai/dsh-experimental-tool-worktree from dsh.profile.bundles if the standalone plugin was enabled. by @LegGasai
+- Ralph loop and Session search are no longer listed as experimental plugins. by @ZiyaZhang
+- Add `apply_patch`, disabled by default, to create, edit, delete, and move multiple files in one call, with changes available in Review. by @sjw1231, @CreatixChu
+- Disable read-before-write and external-change checks by default while retaining sandbox limits and Review. Profiles requiring the previous checks can explicitly restore the observation policy. by @sjw1231
+- Activate tools conditionally per step with consistent model declarations, PTC bindings, and execution admission. Plugins must migrate tools.resolve/executable and prompt-assembly integration. by @LegGasai
+- Add a VM Script mode to Node PTC with top-level await, dynamic imports, and expression results, plus optional state retention across calls. Per-call execution remains the default; top-level return and using are unsupported. by @kermanx
+- Split native and PTC tool execution into Agent-scoped plugins; enable PTC through configuration overlays and migrate tools.mode and DSH_TOOLS_MODE usage. by @kermanx
+- Move the PTC Node control channel to birpc; upgrade self-deployed bootstraps and SSH helpers together, with SSH protocol increasing from 2 to 3. by @kermanx
+- Report caller-cancelled run_code calls in PTC Mode as ABORTED rather than CODE_RUN_FAILED. SDK and Session consumers must update cancellation handling. by @kermanx
+- Allow Web Fetch to access non-public addresses for proxies and internal networks; deployments must restrict network access separately. by @turtle2099
+- Support experimental Auto review in Headless. by @tianyicui
+- Retrieve diagnostic reports for desktop startup failures, including a bounded history of recent plugin operations to help troubleshooting. by @winewill
+- Add independent Session APIs to read snapshots and continuously subscribe to Session event logs, execution state, and event-projection data. by @imccyu
+- Fix event publication and cleanup around Session creation, recovery, and disposal. Make initialization events available to live subscribers and wait for acquired resources to finish cleanup on cancellation. by @kermanx
+- Make Session Projection registration asynchronous, with plugins retaining a handle at startup. by @kermanx, @Magolor
+- Allow whole-unit JSON and SQLite storage to read explicitly declared compatible older versions and write in the current version format. by @Magolor
+- Rename Custom plugin markets to Custom plugin indexes. Discover reads user-added index files, and index generation excludes private versions, tags, and default-branch packages. by @turtle2099, @turtle1999
+- Official bundle lists are now exported by @turtle2099
+- Allow plugins to supply navigation icons for their settings pages, restoring the default icon when unloaded. by @Magolor
+- Show complete diagnostics and the Host log location for plugin failures, distinguishing installation failures from subsequent activation failures. by @kermanx
+
+Full Changelog: https://github.com/deepseek-ai/deepseek-harness/compare/dsh-v0.2.1-rc.5...dsh-v0.2.2-rc.1
+
 ## [0.1.42] - 2026-11-03
 
 ### 桌面端
@@ -2076,5 +2370,7 @@ Full Changelog: https://github.com/deepseek-ai/deepseek-harness/compare/dsh-v0.1
 
 [0.1.41]: https://github.com/314857493/dsh-desktop/compare/v0.1.40...v0.1.41
 
-[Unreleased]: https://github.com/314857493/dsh-desktop/compare/v0.1.42...HEAD
 [0.1.42]: https://github.com/314857493/dsh-desktop/compare/v0.1.41...v0.1.42
+
+[Unreleased]: https://github.com/314857493/dsh-desktop/compare/v0.1.43...HEAD
+[0.1.43]: https://github.com/314857493/dsh-desktop/compare/v0.1.42...v0.1.43
