@@ -186,15 +186,17 @@ const PAGE_SHIM: &str = r#"
     feedback.setAttribute('role', isError ? 'alert' : 'status');
     feedback.setAttribute('aria-live', isError ? 'assertive' : 'polite');
     Object.assign(feedback.style, {
-      position: 'relative',
-      flex: 'none',
-      width: 'auto',
+      position: 'absolute',
+      top: '54px',
+      right: '24px',
+      width: '320px',
+      maxWidth: 'calc(100% - 48px)',
+      zIndex: '30',
       boxSizing: 'border-box',
       display: 'grid',
       gridTemplateColumns: '24px minmax(0, 1fr) auto',
       columnGap: '10px',
       rowGap: '4px',
-      margin: '0 24px 12px',
       padding: '12px',
       border: '1px solid var(--dsw-alias-border-l2, rgba(127, 127, 127, 0.22))',
       borderRadius: '12px',
@@ -204,6 +206,14 @@ const PAGE_SHIM: &str = r#"
       fontSize: '12px',
       lineHeight: '18px',
     });
+    const updateBtn = document.getElementById('dsh-desktop-update-button');
+    if (updateBtn && context.dialog) {
+      const dialogRect = context.dialog.getBoundingClientRect();
+      const buttonRect = updateBtn.getBoundingClientRect();
+      if (buttonRect.height > 0) {
+        feedback.style.top = `${Math.round(buttonRect.bottom - dialogRect.top + 6)}px`;
+      }
+    }
 
     const icon = document.createElement('span');
     icon.textContent = palette.icon;
@@ -294,10 +304,9 @@ const PAGE_SHIM: &str = r#"
       feedback.appendChild(install);
     }
 
-    // The Settings content column is a flex stack: header, then options.
-    // Insert the card in that flow so it shortens the scrollable options area
-    // instead of covering the first settings rows.
-    context.header.insertAdjacentElement('afterend', feedback);
+    // Anchor the feedback card inside the Settings dialog panel so it floats
+    // directly below the header updater button in the top-right corner.
+    context.dialog.appendChild(feedback);
 
     if (status !== 'available') {
       feedbackTimer = window.setTimeout(removeUpdateFeedback, status === 'latest' ? 4000 : 6500);
