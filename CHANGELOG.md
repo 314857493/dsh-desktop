@@ -8,6 +8,36 @@ DeepSeek Harness 上游版本，以便复现构建和排查兼容性问题。
 
 ## [Unreleased]
 
+## [0.1.45] - 2026-11-13
+
+### 桌面端
+
+- 无桌面壳代码变更；此版本用于同步上游 DeepSeek Harness。
+
+### 内置 DeepSeek Harness
+
+- 版本：`dsh-v0.2.2-rc.2` → `dsh-v0.2.2-rc.3`
+- Commit：`38a6a5c965aa99ab525161efb7cc5cf1fe62fced`
+- [上游 Release Notes](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.2.2-rc.3)
+
+#### 新增功能
+
+- 新增实验性「DeepSeek 会话导入」插件，支持将 DeepSeek App 或网页版的历史会话导入工作区，并继续对话。 @imccyu
+
+#### 问题修复
+
+- 修复 Windows 桌面版应用内更新可能失败、无法自动重新打开的问题。 @winewill
+
+#### New Features
+
+- Add an experimental DeepSeek chat import plugin to import past conversations from DeepSeek App or its web version into a workspace and continue chatting. by @imccyu
+
+#### Bug Fixes
+
+- Fix an issue that could cause Windows desktop in-app updates to fail and prevent the app from reopening automatically. by @winewill
+
+Full Changelog: https://github.com/deepseek-ai/deepseek-harness/compare/dsh-v0.2.2-rc.2...dsh-v0.2.2-rc.3
+
 ## [0.1.44] - 2026-11-12
 
 ### 桌面端
@@ -2564,5 +2594,7 @@ Full Changelog: https://github.com/deepseek-ai/deepseek-harness/compare/dsh-v0.1
 
 [0.1.43]: https://github.com/314857493/dsh-desktop/compare/v0.1.42...v0.1.43
 
-[Unreleased]: https://github.com/314857493/dsh-desktop/compare/v0.1.44...HEAD
 [0.1.44]: https://github.com/314857493/dsh-desktop/compare/v0.1.43...v0.1.44
+
+[Unreleased]: https://github.com/314857493/dsh-desktop/compare/v0.1.45...HEAD
+[0.1.45]: https://github.com/314857493/dsh-desktop/compare/v0.1.44...v0.1.45
