@@ -893,6 +893,7 @@ Full Changelog: [dsh-v0.2.1-rc.4...dsh-v0.2.2-alpha.2](https://github.com/deepse
 
 ### 修复
 
+- 修复设置弹窗中「检查更新」状态反馈卡被误放入左侧导航栏底部并被挤压折行的问题，调整为贴合在右上角更新按钮下方的浮层展示。
 - 兼容上游 DeepSeek Harness >= 0.2.2 将官方配置模板拆分至 `@deepseek-ai/dsh-official-bundles` 的变更，修复 `ensure-marketplace` 在新上游版本首次初始化 profile 时报错 `TypeError: Cannot read properties of undefined (reading 'web')` 的问题。
 
 ### 内置 DeepSeek Harness
