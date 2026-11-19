@@ -8,6 +8,30 @@ DeepSeek Harness 上游版本，以便复现构建和排查兼容性问题。
 
 ## [Unreleased]
 
+## [0.1.47] - 2026-11-19
+
+### 桌面端
+
+- 无桌面壳代码变更；此版本用于同步上游 DeepSeek Harness。
+
+### 内置 DeepSeek Harness
+
+- 版本：`dsh-v0.2.2-rc.3` → `dsh-v0.2.2-rc.4`
+- Commit：`3f321d32bfe382212a8ed8785c1d47a5a300aa23`
+- [上游 Release Notes](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.2.2-rc.4)
+
+#### 问题修复
+
+- 优化模型请求收到异常消息响应时的表现。 @turtle2099
+- 修复 LiveShare 在桌面端无法创建分享的问题。 @mektpoy
+
+#### Bug Fixes
+
+- Improve handling of unexpected model responses. by @turtle2099
+- Fix LiveShare failing to create shares in the desktop app. by @mektpoy
+
+Full Changelog: https://github.com/deepseek-ai/deepseek-harness/compare/dsh-v0.2.2-rc.3...dsh-v0.2.2-rc.4
+
 ## [0.1.46] - 2026-11-16
 
 ### 桌面端
@@ -2629,5 +2653,7 @@ Full Changelog: https://github.com/deepseek-ai/deepseek-harness/compare/dsh-v0.1
 
 [0.1.45]: https://github.com/314857493/dsh-desktop/compare/v0.1.44...v0.1.45
 
-[Unreleased]: https://github.com/314857493/dsh-desktop/compare/v0.1.46...HEAD
 [0.1.46]: https://github.com/314857493/dsh-desktop/compare/v0.1.45...v0.1.46
+
+[Unreleased]: https://github.com/314857493/dsh-desktop/compare/v0.1.47...HEAD
+[0.1.47]: https://github.com/314857493/dsh-desktop/compare/v0.1.46...v0.1.47
