@@ -8,6 +8,28 @@ DeepSeek Harness 上游版本，以便复现构建和排查兼容性问题。
 
 ## [Unreleased]
 
+## [0.1.48] - 2026-11-20
+
+### 桌面端
+
+- 无桌面壳代码变更；此版本用于同步上游 DeepSeek Harness。
+
+### 内置 DeepSeek Harness
+
+- 版本：`dsh-v0.2.2-rc.4` → `dsh-v0.2.2-rc.5`
+- Commit：`9c2670d3bce5275e0d1610272958121af87787bb`
+- [上游 Release Notes](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.2.2-rc.5)
+
+#### 体验优化
+
+- DeepSeek 模型使用 DeepSeek 服务端搜索，搜索不按次收费；其他模型默认使用 DeepSeek Search API。 @LegGasai
+
+#### Improvements
+
+- DeepSeek models use DeepSeek server-side search with no per-search charge; other models default to DeepSeek Search API. by @LegGasai
+
+Full Changelog: https://github.com/deepseek-ai/deepseek-harness/compare/dsh-v0.2.2-rc.4...dsh-v0.2.2-rc.5
+
 ## [0.1.47] - 2026-11-19
 
 ### 桌面端
@@ -2655,5 +2677,7 @@ Full Changelog: https://github.com/deepseek-ai/deepseek-harness/compare/dsh-v0.1
 
 [0.1.46]: https://github.com/314857493/dsh-desktop/compare/v0.1.45...v0.1.46
 
-[Unreleased]: https://github.com/314857493/dsh-desktop/compare/v0.1.47...HEAD
 [0.1.47]: https://github.com/314857493/dsh-desktop/compare/v0.1.46...v0.1.47
+
+[Unreleased]: https://github.com/314857493/dsh-desktop/compare/v0.1.48...HEAD
+[0.1.48]: https://github.com/314857493/dsh-desktop/compare/v0.1.47...v0.1.48
