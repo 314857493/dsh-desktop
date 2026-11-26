@@ -1,12 +1,8 @@
 name: Release
 
+# 自动发布已停用：官方已推出桌面端，本项目不再同步上游，也不再自动发版。
+# 每日上游同步的 schedule 与 v* tag 触发均已移除，仅保留手动 workflow_dispatch。
 on:
-  push:
-    tags: ['v*']
-  schedule:
-    # Run once per day at 02:17 UTC (10:17 Asia/Shanghai). Scheduled workflows
-    # run from the default branch and process one unseen upstream release.
-    - cron: '17 2 * * *'
   workflow_dispatch:
     inputs:
       upstream_ref:

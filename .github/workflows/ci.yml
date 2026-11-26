@@ -1,9 +1,9 @@
 name: CI
 
+# 自动 CI 已停用：项目不再跟随上游开发，push / pull_request 不再触发本工作流。
+# 仅保留 workflow_dispatch，便于需要时在 Actions 页面手动跑一次校验。
 on:
-  push:
-    branches: [main]
-  pull_request:
+  workflow_dispatch:
 
 permissions:
   # rustsec/audit-check publishes its informational findings as a separate

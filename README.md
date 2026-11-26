@@ -2,6 +2,11 @@
 
 > **简体中文** | [English](README.en.md) | [更新日志](CHANGELOG.md)
 
+> [!WARNING]
+> **已停止开发 / 停止同步上游**：DeepSeek Harness 已推出官方桌面端，本项目不再继续开发，
+> 也不再跟随上游 DSH 更新。仓库保留为历史存档，现有代码与已发布的安装包按「现状」提供，
+> 不再保证与最新版 DSH 兼容，也不再提供自动构建、自动发版等 CI 自动化。
+
 > [!IMPORTANT]
 > **非官方个人项目**：本项目由个人独立开发和维护，不是 DeepSeek 或 DeepSeek Harness
 > 官方项目，与其官方团队不存在隶属、合作或背书关系。
@@ -30,7 +35,7 @@ DSH，本仓库提供的是桌面封装、自包含打包与自动化发布（�
 - 📦 **自包含分发**：内置 Node.js 运行时 + 裁剪过的 DSH 运行环境，对方无需安装任何东西
 - ⚙️ **可配置**：内置资源 / 配置文件 / 环境变量 / 命令行参数四级优先级
 - 🔄 **应用内更新**：启动后静默检查，也可在设置中手动检查、下载并安装签名更新
-- 🔄 **跟随上游**：发布脚本从 DSH 官方仓库拉取源码构建，可固定 tag/分支，随上游更新
+- 🔄 **跟随上游**（已停止）：曾由发布脚本从 DSH 官方仓库拉取源码构建；项目停更后不再同步
 
 ## 环境要求
 
@@ -146,7 +151,7 @@ Tauri 壳自身的 `dsh-desktop.json` 与 DSH 内部配置保持分离。
 > 商城收录不代表本项目或 DeepSeek 对第三方插件背书。插件与本地代码拥有相同进程权限，
 > 安装前请核对来源、仓库和权限提示；需要构建脚本的包默认不会被 pnpm 自动放行。
 
-## 构建 / 发布（全自动）
+## 构建 / 发布（手动）
 
 ```bash
 # 本地开发打包（默认从 GitHub 获取 DSH 源码；不生成 updater 签名产物）
@@ -179,9 +184,9 @@ node scripts/release.mjs --package-only      # 仅打包已准备好的 rt/ 和 
 未使用 `--no-updater` 时，脚本若找不到 `TAURI_SIGNING_PRIVATE_KEY` 会直接失败，
 避免误发布无法被已安装客户端验证的更新。
 
-> **产物版本号**：GitHub Actions 打 `v*` tag 发布时自动把 tag 名作为版本号
-> （`vX.Y.Z` → 安装包 `DSH Desktop_X.Y.Z_x64-setup.exe`）；本地/手动触发不传则
-> 使用仓库里 tauri.conf.json 的版本。
+> **产物版本号**：手动在 Actions 页面运行 Release 并指定版本时，版本名会作为产物版本号
+> （`vX.Y.Z` → 安装包 `DSH Desktop_X.Y.Z_x64-setup.exe`）；本地构建/手动触发不传则
+> 使用仓库里 tauri.conf.json 的版本。自动打 `v*` tag 发版的触发已随停更移除。
 
 远程源码缓存在 `repo-cache/deepseek-harness/`（浅克隆，后续运行增量 fetch，不触碰
 本机开发用的 checkout）。
@@ -223,23 +228,27 @@ node scripts/release.mjs --package-only      # 仅打包已准备好的 rt/ 和 
 
 ### GitHub Actions
 
-仓库内置两个工作流：
+> [!NOTE]
+> **自动 CI 已停用**：由于本项目已停止同步上游，`ci.yml` 与 `release.yml` 的自动触发
+> （push / PR / `v*` tag / 每日上游检查）均已移除，Dependabot 配置与自动合并工作流也已删除。
+> 两个工作流仅保留 `workflow_dispatch`，需要时可到 Actions 页面手动运行。
 
-- **CI**（`.github/workflows/ci.yml`）：push/PR 时校验脚本语法、空白、无机器路径。
-- **Release**（`.github/workflows/release.yml`）：每天 02:17 UTC（上海时间 10:17）
-  检查上游 Release；发现新的 `dsh-v*` 版本后固定 tag/commit，每次处理一个
-  尚未发布的版本。Windows、macOS、Linux 全部构建成功后，才更新版本文件、
-  `CHANGELOG.md`、`.dsh-upstream.json`，并上传安装包、签名更新包、
-  带真实更新说明的 `latest.json`、`SHA256SUMS` 和 GitHub Release。上游依赖安装、
-  构建和运行时冒烟测试位于无密钥 runner；准备好的运行时通过短期 artifact 交给独立
-  签名 runner，只有后者能读取 updater / Apple 签名凭据。
+两个工作流的手动模式如下：
 
-定时发布通过 `concurrency` 串行执行；如果 changelog 提交成功后附件上传中断，下次检查会
-识别不完整 Release 并用同一版本重试。手动推送 `v*` tag 和 Actions 页面手动构建仍然可用。
+- **CI**（`.github/workflows/ci.yml`）：校验脚本语法、脚本测试、Rust 格式与 Clippy、
+  Rust 依赖审计、空白与无机器路径。
+- **Release**（`.github/workflows/release.yml`）：手动指定上游 ref 后固定 tag/commit 构建。
+  Windows、macOS、Linux 全部构建成功后，才更新版本文件、`CHANGELOG.md`、
+  `.dsh-upstream.json`，并上传安装包、签名更新包、带真实更新说明的 `latest.json`、
+  `SHA256SUMS` 和 GitHub Release。上游依赖安装、构建和运行时冒烟测试位于无密钥 runner；
+  准备好的运行时通过短期 artifact 交给独立签名 runner，只有后者能读取 updater / Apple
+  签名凭据。
+
 手动运行默认只保存 Actions 产物，启用 `publish` 才会发布 Release。
-`.dsh-upstream.json` 记录最近已处理的上游 tag/commit 和对应桌面版本。
+`.dsh-upstream.json` 记录最近已处理的上游 tag/commit 和对应桌面版本（现存文件为停更前的
+最后一次记录）。
 
-自动发版需要仓库 Settings → Actions → General 中的 Workflow permissions 允许读写内容；
+发布仍需要仓库 Settings → Actions → General 中的 Workflow permissions 允许读写内容；
 如果 `main` 有分支保护，还需允许 `github-actions[bot]` 写入发布元数据提交，否则构建完成后
 会停在 changelog/version 提交步骤。
 
@@ -276,12 +285,11 @@ macOS 构建至少使用 ad-hoc 身份签署完整 `.app`，避免 Apple Silicon
 验证，用户仍可能需要在“系统设置 → 隐私与安全性”中明确允许首次打开。
 
 ```bash
-# 触发发布（推 tag 即可，例如）
-git tag v0.2.0
-git push origin v0.2.0
+# 触发发布：到 Actions 页面手动运行 Release 工作流（推 v* tag 已不再触发）
+gh workflow run release.yml -f upstream_ref=<tag> -f version=<semver> -f publish=true
 ```
 
-> 首次构建较慢（CI 全量编译），cargo registry 已缓存；后续相同依赖复用。
+> 首次构建较慢（全量编译），cargo registry 已缓存；后续相同依赖复用。
 
 ### macOS 提示“已损坏，无法打开”
 

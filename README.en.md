@@ -2,6 +2,13 @@
 
 > **English** | [简体中文](README.md) | [Changelog](CHANGELOG.md)
 
+> [!WARNING]
+> **No longer developed / no longer tracking upstream:** DeepSeek Harness now ships an official
+> desktop app, so this project is no longer developed and no longer follows upstream DSH releases.
+> The repository remains as a historical archive; the code and previously published installers are
+> provided "as is", are no longer guaranteed to work with the latest DSH, and no longer run any
+> automated build or release CI.
+
 > [!IMPORTANT]
 > **Unofficial personal project:** This project is independently developed and maintained by an
 > individual. It is not an official DeepSeek or DeepSeek Harness project and is not affiliated
@@ -22,7 +29,7 @@ This project does **not modify the DSH core** — the agent loop, tool calling, 
 - 📦 **Self-contained distribution** — bundles a Node.js runtime and a pruned DSH runtime; end users install nothing
 - ⚙️ **Configurable** — four-level precedence: bundled resources < config file < env vars < CLI args
 - 🔄 **In-app updates** — checks silently at startup, with manual check, download, and installation of signed updates in Settings
-- 🔄 **Tracks upstream** — the release script pulls DSH source from the official repository and can pin a tag/branch
+- 🔄 **Tracks upstream** (stopped) — the release script used to pull DSH source from the official repository; it no longer follows upstream releases
 
 ## Requirements
 
@@ -129,7 +136,7 @@ disabled. An explicit user setting may override that default; close and reopen D
 > A market listing is not an endorsement by this project or DeepSeek. Plugins execute with local-code
 > privileges: verify the source, repository, and permission/build-script prompts before installing.
 
-## Build / Release (fully automated)
+## Build / Release (manual)
 
 ```bash
 # Local development package (fetches DSH from GitHub; no signed updater artifacts)
@@ -165,10 +172,11 @@ node scripts/release.mjs --package-only      # package an existing rt/ and node-
 > is missing, preventing an update that installed clients cannot verify from being
 > published accidentally.
 
-> **Artifact version**: when GitHub Actions publishes a `v*` tag, the tag name is
-> used as the artifact version automatically (`vX.Y.Z` → installer
-> `DSH Desktop_X.Y.Z_x64-setup.exe`); local runs / manual dispatch without a
-> version use the version checked into `tauri.conf.json`.
+> **Artifact version**: when you manually run the Release workflow from the Actions
+> page with a version, that version is used for the artifacts (`vX.Y.Z` → installer
+> `DSH Desktop_X.Y.Z_x64-setup.exe`); local runs / manual dispatch without a version
+> use the version checked into `tauri.conf.json`. The automatic `v*` tag trigger was
+> removed along with upstream tracking.
 
 Remote source is cached in `repo-cache/deepseek-harness/` (shallow clone; subsequent runs do an incremental fetch and never touch your local dev checkout).
 
@@ -206,21 +214,26 @@ Remote source is cached in `repo-cache/deepseek-harness/` (shallow clone; subseq
 
 ### GitHub Actions, in-app updates, and macOS signing
 
-At 02:17 UTC each day (10:17 Asia/Shanghai), the release workflow checks upstream
-releases and processes one unseen `dsh-v*` version. It pins the exact tag and commit, then builds Windows,
+> [!NOTE]
+> **Automated CI is disabled.** Because this project no longer tracks upstream, the
+> automatic triggers in `ci.yml` and `release.yml` (push / pull request / `v*` tag /
+> the daily upstream check) have been removed, and the Dependabot config plus its
+> auto-merge workflow were deleted. Both workflows keep only `workflow_dispatch`, so
+> you can still run them by hand from the Actions page.
+
+A manual Release run pins the given upstream ref (tag and commit) and builds Windows,
 macOS, and Linux bundles. Only after every platform succeeds does it update the checked-in
 versions, `CHANGELOG.md`, and `.dsh-upstream.json`, then publish signed updater artifacts,
 a `latest.json` manifest containing real update notes, `SHA256SUMS`, and the GitHub Release.
 Upstream install/build/smoke-test work runs on a credential-free runner; a short-lived runtime
 artifact is handed to a separate signing runner that alone can access updater and Apple signing
-credentials. Runs are
-serialized, and an interrupted release with missing assets is retried with the same version.
-Pushing a `v*` tag and manual Actions builds remain supported. Manual runs store Actions
-artifacts by default and publish a GitHub Release only when `publish` is enabled.
+credentials. Manual runs store Actions artifacts by default and publish a GitHub Release only
+when `publish` is enabled.
 `.dsh-upstream.json` records the most recently processed upstream tag/commit and its
-corresponding desktop version.
+corresponding desktop version (the checked-in file is the last record made before the
+project stopped tracking upstream).
 
-Automatic publishing requires read/write Workflow permissions under Settings → Actions →
+Manual publishing requires read/write Workflow permissions under Settings → Actions →
 General. If `main` is protected, allow `github-actions[bot]` to write the release-metadata
 commit; otherwise the workflow stops after the platform builds.
 
